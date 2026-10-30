@@ -3,6 +3,18 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from server.db.repo import PlatformRepo
+from server.db.models import Visit
+from agent.domain.enums import Channel, DocQuality, DocType, Language, LifecycleState
+from agent.ports import (
+    ContextBundle as AgentContextBundle,
+    Counters as AgentCounters,
+    DocumentView as AgentDocumentView,
+    MessageView as AgentMessageView,
+    MerchantView as AgentMerchantView,
+    SettlementView as AgentSettlementView,
+    TicketView as AgentTicketView,
+    VisitView as AgentVisitView,
+)
 
 # Domain views mirroring agent/ports.py
 class MerchantView(BaseModel):
@@ -16,6 +28,7 @@ class MerchantView(BaseModel):
     state: str
     lead_score: float
     phone_e164: str
+    preferred_channel: Channel = Channel.WHATSAPP
     consent: bool
 
 class MessageView(BaseModel):
@@ -77,6 +90,7 @@ class AgentStoreAdapter:
             state=m.state,
             lead_score=m.lead_score,
             phone_e164=m.phone_e164,
+            preferred_channel=m.preferred_channel,
             consent=m.consent
         )
 
@@ -95,6 +109,7 @@ class AgentStoreAdapter:
             state=m.state,
             lead_score=m.lead_score,
             phone_e164=m.phone_e164,
+            preferred_channel=m.preferred_channel,
             consent=m.consent
         )
 
@@ -111,6 +126,7 @@ class AgentStoreAdapter:
             state=m.state,
             lead_score=m.lead_score,
             phone_e164=m.phone_e164,
+            preferred_channel=m.preferred_channel,
             consent=m.consent
         )
 
@@ -212,8 +228,104 @@ class AgentStoreAdapter:
             precheck_passed=doc.precheck_passed
         )
 
-    def get_context_bundle(self, merchant_id: str) -> Dict[str, Any]:
-        return self.repo.get_context_bundle(merchant_id)
+    def get_context_bundle(self, merchant_id: str) -> AgentContextBundle:
+        raw = self.repo.get_context_bundle(merchant_id)
+        merchant = raw["merchant"]
+        merchant_record = self.repo.get_merchant(merchant_id)
+
+        def parse_datetime(value: Any) -> datetime | None:
+            if value is None or isinstance(value, datetime):
+                return value
+            return datetime.fromisoformat(value)
+
+        agent_merchant = AgentMerchantView(
+            id=merchant["id"],
+            shop_name=merchant["shop_name"],
+            owner_name=merchant["owner_name"],
+            category=merchant["category"],
+            city=merchant["city"],
+            area=merchant["area"],
+            language=Language(merchant.get("language", "hindi")),
+            phone_e164=merchant["phone_e164"],
+            preferred_channel=Channel(merchant.get("preferred_channel", "whatsapp")),
+            state=LifecycleState(merchant["state"]),
+            lead_score=merchant["lead_score"],
+            score_explanation=getattr(merchant_record, "score_explanation", ""),
+            footfall_score=getattr(merchant_record, "footfall_score", 0.0),
+            fse_id=getattr(merchant_record, "fse_id", "") or "",
+            lat=getattr(merchant_record, "lat", None),
+            lng=getattr(merchant_record, "lng", None),
+        )
+
+        documents = self.repo.get_documents(merchant_id)
+        document_views = [
+            AgentDocumentView(
+                id=document.id,
+                doc_type=DocType(document.doc_type),
+                quality=DocQuality(document.quality) if document.quality else None,
+                precheck_passed=document.precheck_passed,
+                kyc_status=document.kyc_status,
+                attempts=document.attempts,
+                issues=document.issues or [],
+            )
+            for document in documents
+        ]
+
+        recent_messages = [
+            AgentMessageView(
+                id=message.id,
+                direction=message.direction,
+                channel=Channel(message.channel),
+                kind=message.kind,
+                text=message.text,
+                intent=message.intent,
+                sentiment=message.sentiment,
+                created_at=message.created_at,
+            )
+            for message in self.repo.get_messages(merchant_id, limit=10)
+        ]
+
+        open_tickets = [
+            AgentTicketView(id=ticket["id"], type=ticket["type"], status="open")
+            for ticket in raw["open_tickets"]
+        ]
+        latest_settlement = raw["settlement"]
+        settlement_view = (
+            AgentSettlementView(
+                id=latest_settlement.get("id", ""),
+                amount=latest_settlement["amount"],
+                expected_date=latest_settlement["expected_date"],
+                status=latest_settlement["status"],
+                delay_reason=latest_settlement["delay_reason"],
+            )
+            if latest_settlement
+            else None
+        )
+        visits = self.repo.db.query(Visit).filter(Visit.merchant_id == merchant_id).all()
+
+        return AgentContextBundle(
+            merchant=agent_merchant,
+            documents=document_views,
+            txn_count=raw["activity"]["txn_count"],
+            last_txn_at=parse_datetime(raw["activity"]["last_txn_at"]),
+            device_status=raw["activity"]["device_status"],
+            installed_at=parse_datetime(raw["activity"]["installed_at"]),
+            open_tickets=open_tickets,
+            latest_settlement=settlement_view,
+            recent_messages=recent_messages,
+            visits=[
+                AgentVisitView(
+                    id=visit.id,
+                    fse_id=visit.fse_id,
+                    slot_start=visit.slot_start.isoformat(),
+                    status=visit.status,
+                    cluster_size=visit.cluster_size,
+                )
+                for visit in visits
+            ],
+            counters=AgentCounters(**raw["counters"]),
+            consent=raw["consent"],
+        )
 
     def save_action(
         self,
@@ -358,4 +470,3 @@ class AgentStoreAdapter:
     def schedule_job(self, merchant_id: str, reason: str, run_at: datetime) -> str:
         job = self.repo.schedule_job(merchant_id, reason, run_at)
         return job.id
-

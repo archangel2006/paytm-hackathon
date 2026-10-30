@@ -30,10 +30,12 @@ async def lifespan(app: FastAPI):
         try:
             import agent
             import integrations
+            from integrations import documents, router
+            from integrations.whatsapp import webhook
             agent.configure(
                 store=agent_store,
-                channel=integrations.router,
-                documents=integrations.documents,
+                channel=router,
+                documents=documents,
                 clock=clock
             )
             integrations.configure(
@@ -42,11 +44,12 @@ async def lifespan(app: FastAPI):
                 clock=clock
             )
             scheduler.set_handler(agent.handle_timer)
-            if hasattr(integrations, "whatsapp") and hasattr(integrations.whatsapp, "webhook"):
-                app.include_router(integrations.whatsapp.webhook.router)
+            app.include_router(webhook.router)
             logger.info("Agent and Integrations successfully wired.")
         except ImportError:
-            logger.info("Agent and Integrations packages not found yet. Running in platform standalone mode.")
+            logger.exception(
+                "Agent and Integrations could not be wired because an import failed."
+            )
     finally:
         db.close()
 

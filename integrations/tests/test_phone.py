@@ -8,6 +8,10 @@ def test_normalize(value):
     assert normalize(value) == "+919876543210"
 
 
+def test_normalize_international_number():
+    assert normalize("+1 (555) 212-3891") == "+15552123891"
+
+
 def test_mask_never_returns_full_number():
     masked = mask("+919876543210")
     assert masked == "+91 98xxx xx210"

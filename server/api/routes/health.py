@@ -1,9 +1,10 @@
-import os
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from server.db.session import get_db
 from server.adapters.clock import clock
+from integrations.whatsapp import status as whatsapp_status
+from agent import settings as agent_settings
 
 router = APIRouter(tags=["health"])
 
@@ -16,8 +17,11 @@ def get_health(db: Session = Depends(get_db)):
     except Exception:
         db_ok = False
 
-    llm_configured = bool(os.environ.get("LLM_API_KEY") or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY"))
-    whatsapp_configured = bool(os.environ.get("WHATSAPP_TOKEN") or os.environ.get("WHATSAPP_PHONE_NUMBER_ID"))
+    llm_configured = bool(
+        agent_settings.LLM_API_KEY
+        and agent_settings.LLM_API_KEY != "PASTE_YOUR_LLM_API_KEY_HERE"
+    )
+    whatsapp_configured = whatsapp_status() == "configured"
 
     return {
         "status": "ok" if db_ok else "degraded",
@@ -27,4 +31,3 @@ def get_health(db: Session = Depends(get_db)):
         "clock_simulated_now": clock.now().isoformat(),
         "clock_offset_seconds": clock.offset_seconds
     }
-

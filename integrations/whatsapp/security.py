@@ -17,7 +17,7 @@ def verify_signature(body: bytes, header_value: str | None, app_secret: str | No
     """
     secret = app_secret if app_secret is not None else settings.WHATSAPP_APP_SECRET
     if not secret:
-        return True
+        return False
     if not header_value:
         return False
 

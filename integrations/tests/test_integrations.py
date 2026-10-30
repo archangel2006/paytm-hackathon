@@ -138,7 +138,7 @@ class TestSignatureCheck:
         original = settings.WHATSAPP_APP_SECRET
         settings.WHATSAPP_APP_SECRET = ""
         try:
-            assert verify_signature(b'anything', None) is True
+            assert verify_signature(b"anything", None) is False
         finally:
             settings.WHATSAPP_APP_SECRET = original
 

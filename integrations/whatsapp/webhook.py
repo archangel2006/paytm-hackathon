@@ -150,8 +150,8 @@ async def _process_payload(raw_body: bytes) -> None:
             kind=parsed.kind,
             text=parsed.text,
             media_path=media_path,
-            media_mime=media_mime,
-            timestamp=parsed.timestamp,
+            mime_type=media_mime,
+            received_at=parsed.timestamp,
         )
 
         logger.info(
@@ -168,7 +168,7 @@ async def _process_payload(raw_body: bytes) -> None:
                 "Agent result for event_id=%s: success=%s action=%s",
                 parsed.event_id,
                 result.success,
-                result.action_taken,
+                result.actions[0].action_type.value if result.actions else None,
             )
         except Exception:
             logger.exception("Agent failed for event_id=%s", parsed.event_id)

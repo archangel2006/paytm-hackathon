@@ -54,4 +54,3 @@ def _mime_to_ext(mime: str) -> str:
         "audio/mpeg": "mp3",
         "audio/mp4": "m4a",
     }.get(mime, "bin")
-

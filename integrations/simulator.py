@@ -71,7 +71,7 @@ def receive_text(merchant_id: str, text: str) -> AgentResult:
         channel=Channel.SIMULATOR,
         kind="text",
         text=text,
-        timestamp=clock.now(),
+        received_at=clock.now(),
     )
 
     logger.info(
@@ -139,8 +139,8 @@ def receive_media(
         kind="media",
         text=filename,
         media_path=save_path,
-        media_mime=mime,
-        timestamp=clock.now(),
+        mime_type=mime,
+        received_at=clock.now(),
     )
 
     logger.info(
