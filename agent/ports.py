@@ -33,8 +33,9 @@ from agent.domain.enums import (
 class IncomingEvent(BaseModel):
     """Built by Integrations, consumed by the agent."""
     event_id: str                         # WhatsApp message id or uuid (idempotency key)
+    merchant_id: str | None = None
     channel: Channel
-    kind: Literal["text", "media", "voice"]
+    kind: Literal["text", "media", "voice", "audio"]
     phone_e164: str                       # normalised, e.g. +919876543210
     text: str | None = None               # for voice: the transcript
     media_path: str | None = None         # local file path after download
@@ -47,19 +48,23 @@ class OutgoingMessage(BaseModel):
     merchant_id: str
     phone_e164: str
     channel: Channel
-    text: str                             # free-form, used when 24-hour window is open
+    text: str = ""                         # free-form, used when 24-hour window is open
     template_name: str | None = None      # approved template for when the window is closed
     template_params: list[str] = []
-    language: Language
+    language: Language = Language.HINDI
 
 
 class SendResult(BaseModel):
     """Result of sending a message through the channel."""
     ok: bool
     provider_message_id: str | None = None
-    used: Literal["text", "template", "none"]
+    used: Literal["text", "template", "none"] = "none"
     error_code: str | None = None
-    error_message: str | None = None
+    error_detail: str | None = None
+
+    @property
+    def error_message(self) -> str | None:
+        return self.error_detail
 
 
 class ProfileForKyc(BaseModel):
@@ -71,18 +76,18 @@ class ProfileForKyc(BaseModel):
 class DocValidationResult(BaseModel):
     """Result of the document pre-check (NOT KYC verification)."""
     quality: DocQuality
-    sharpness_score: float
-    extracted_pan: str | None
-    pan_format_valid: bool
-    name_match: bool | None               # None when no name could be read
-    issues: list[str]                     # blurry, unreadable, pan_not_found, pan_format_invalid, name_mismatch
-    precheck_passed: bool                 # a pre-check, NEVER call this "KYC verified"
+    sharpness_score: float = 0.0
+    extracted_pan: str | None = None
+    pan_format_valid: bool = False
+    name_match: bool | None = None       # None when no name could be read
+    issues: list[str] = []               # blurry, unreadable, pan_not_found, pan_format_invalid, name_mismatch
+    precheck_passed: bool = False        # a pre-check, NEVER call this "KYC verified"
 
 
 class KycResult(BaseModel):
     """Result from the mock KYC service."""
     status: Literal["submitted", "approved", "rejected"]
-    reference_id: str
+    reference_id: str | None = None
 
 
 class ActionSummary(BaseModel):
@@ -96,10 +101,12 @@ class ActionSummary(BaseModel):
 
 class AgentResult(BaseModel):
     """Result returned from any agent entrypoint."""
-    merchant_id: str
-    actions: list[ActionSummary]
-    reply_sent: bool
-    state_after: LifecycleState
+    merchant_id: str = ""
+    actions: list[ActionSummary] = []
+    reply_sent: bool = False
+    state_after: LifecycleState = LifecycleState.NEW
+    success: bool = True
+    error: str | None = None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -117,6 +124,7 @@ class MerchantView(BaseModel):
     area: str
     language: Language
     phone_e164: str
+    preferred_channel: Channel = Channel.WHATSAPP
     state: LifecycleState
     lead_score: float
     score_explanation: str
@@ -383,4 +391,3 @@ class Store(Protocol):
         run_at: datetime,
     ) -> None:
         ...
-

@@ -14,6 +14,8 @@ class ServerSettings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./saathi.db"
     CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
     UPLOAD_DIR: str = "./uploads"
+    MAX_UPLOAD_MB: float = 10.0
+    SAATHI_API_KEY: str = ""
     SCHEDULER_TICK_SECONDS: int = 5
 
     # Simulation defaults
@@ -33,4 +35,3 @@ class ServerSettings(BaseSettings):
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
 settings = ServerSettings()
-

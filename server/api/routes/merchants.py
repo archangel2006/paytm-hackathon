@@ -1,9 +1,13 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
-from server.api.deps import get_repo, APIError
+from server.api.deps import get_repo, APIError, require_staff_access
 from server.db.repo import PlatformRepo
 
-router = APIRouter(prefix="/merchants", tags=["merchants"])
+router = APIRouter(
+    prefix="/merchants",
+    tags=["merchants"],
+    dependencies=[Depends(require_staff_access)],
+)
 
 @router.get("")
 def list_merchants(
@@ -216,4 +220,3 @@ def preview_next_action(merchant_id: str, repo: PlatformRepo = Depends(get_repo)
         "confidence": 0.90,
         "status": "proposed"
     }
-

@@ -1,4 +1,7 @@
+import mimetypes
 import os
+from pathlib import Path
+from uuid import uuid4
 from fastapi import APIRouter, Depends, UploadFile, File
 from server.api.deps import get_repo, APIError
 from server.db.repo import PlatformRepo
@@ -18,16 +21,28 @@ async def upload_document(
         raise APIError("NOT_FOUND", f"Merchant {merchant_id} not found", status_code=404)
 
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    filename = file.filename or "uploaded_doc.jpg"
-    dest_path = os.path.join(settings.UPLOAD_DIR, f"{merchant_id}_{filename}")
+    extension = mimetypes.guess_extension(file.content_type or "") or ".bin"
+    upload_root = Path(settings.UPLOAD_DIR).resolve()
+    upload_root.mkdir(parents=True, exist_ok=True)
+    dest_path = upload_root / f"{merchant_id}_{uuid4().hex}{extension}"
 
     contents = await file.read()
-    with open(dest_path, "wb") as f:
+    if len(contents) > int(settings.MAX_UPLOAD_MB * 1024 * 1024):
+        raise APIError("PAYLOAD_TOO_LARGE", "Uploaded document exceeds the size limit.", status_code=413)
+    if file.content_type not in {"image/jpeg", "image/png", "image/webp"}:
+        raise APIError("UNSUPPORTED_MEDIA_TYPE", "Only JPEG, PNG, and WebP documents are accepted.", status_code=415)
+
+    resolved_dest = dest_path.resolve()
+    if upload_root not in resolved_dest.parents:
+        raise APIError("INVALID_UPLOAD_PATH", "Invalid upload destination.", status_code=400)
+
+    with resolved_dest.open("wb") as f:
         f.write(contents)
 
-    doc = repo.save_document(merchant_id=merchant_id, doc_type="pan", file_path=dest_path)
+    doc = repo.save_document(merchant_id=merchant_id, doc_type="pan", file_path=str(resolved_dest))
 
     # Deterministic simulation of blur / quality check
+    filename = file.filename or ""
     is_blurry = "blurry" in filename.lower()
     if is_blurry:
         repo.update_document_validation(
@@ -101,4 +116,3 @@ async def upload_document(
             "visit_id": visit.id,
             "cluster_size": cluster_size
         }
-

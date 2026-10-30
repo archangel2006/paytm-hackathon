@@ -5,6 +5,33 @@ All values can be overridden via environment variables.
 Never hardcode these in business logic — always import from here.
 """
 import os
+from pathlib import Path
+
+
+def _load_local_env() -> None:
+    """Load local environment files without overwriting process variables."""
+    candidates = (
+        Path(__file__).with_name(".env"),
+        Path(__file__).parent.parent / "integrations" / ".env",
+        Path(__file__).parent.parent / ".env",
+        Path.cwd() / ".env",
+    )
+    for path in candidates:
+        if not path.is_file():
+            continue
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("\"'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+        break
+
+
+_load_local_env()
 
 
 # ── Retry limits ──────────────────────────────────────────────
@@ -56,4 +83,3 @@ DORMANT_COOLDOWN_DAYS: int = int(os.getenv("DORMANT_COOLDOWN_DAYS", "7"))
 
 # ── Prompt versioning ─────────────────────────────────────────
 PROMPT_VERSION: str = os.getenv("PROMPT_VERSION", "v1")
-

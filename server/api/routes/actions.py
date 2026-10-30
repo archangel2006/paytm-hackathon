@@ -1,10 +1,14 @@
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query, Body
 from pydantic import BaseModel
-from server.api.deps import get_repo, APIError
+from server.api.deps import get_repo, APIError, require_staff_access
 from server.db.repo import PlatformRepo
 
-router = APIRouter(prefix="/actions", tags=["actions"])
+router = APIRouter(
+    prefix="/actions",
+    tags=["actions"],
+    dependencies=[Depends(require_staff_access)],
+)
 
 class ApproveRequest(BaseModel):
     by: str = "manager"
@@ -47,9 +51,14 @@ def list_actions(
     return res
 
 @router.post("/{action_id}/approve")
-def approve_action(action_id: str, req: ApproveRequest, repo: PlatformRepo = Depends(get_repo)):
+def approve_action(
+    action_id: str,
+    req: ApproveRequest,
+    repo: PlatformRepo = Depends(get_repo),
+    actor: str = Depends(require_staff_access),
+):
     act = repo.db.query(repo.db.models.AgentAction if hasattr(repo.db, 'models') else None).filter_by(id=action_id).first() if False else None
-    action = repo.update_action_status(action_id=action_id, status="approved", approved_by=req.by)
+    action = repo.update_action_status(action_id=action_id, status="approved", approved_by=actor)
     if not action:
         raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
 
@@ -63,8 +72,18 @@ def approve_action(action_id: str, req: ApproveRequest, repo: PlatformRepo = Dep
     }
 
 @router.post("/{action_id}/reject")
-def reject_action(action_id: str, req: RejectRequest, repo: PlatformRepo = Depends(get_repo)):
-    action = repo.update_action_status(action_id=action_id, status="rejected", approved_by=req.by, rejection_reason=req.reason_code)
+def reject_action(
+    action_id: str,
+    req: RejectRequest,
+    repo: PlatformRepo = Depends(get_repo),
+    actor: str = Depends(require_staff_access),
+):
+    action = repo.update_action_status(
+        action_id=action_id,
+        status="rejected",
+        approved_by=actor,
+        rejection_reason=req.reason_code,
+    )
     if not action:
         raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
     return {
@@ -74,8 +93,13 @@ def reject_action(action_id: str, req: RejectRequest, repo: PlatformRepo = Depen
     }
 
 @router.post("/{action_id}/edit")
-def edit_action(action_id: str, req: EditRequest, repo: PlatformRepo = Depends(get_repo)):
-    action = repo.update_action_status(action_id=action_id, status="approved", approved_by=req.by)
+def edit_action(
+    action_id: str,
+    req: EditRequest,
+    repo: PlatformRepo = Depends(get_repo),
+    actor: str = Depends(require_staff_access),
+):
+    action = repo.update_action_status(action_id=action_id, status="approved", approved_by=actor)
     if not action:
         raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
     return {
@@ -83,4 +107,3 @@ def edit_action(action_id: str, req: EditRequest, repo: PlatformRepo = Depends(g
         "action_id": action.id,
         "edits": req.edits
     }
-
