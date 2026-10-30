@@ -165,9 +165,10 @@ async def _process_payload(raw_body: bytes) -> None:
         try:
             result = on_incoming(event)
             logger.info(
-                "Agent result for event_id=%s: success=%s action=%s",
+                "Agent result for event_id=%s: success=%s reply_sent=%s action=%s",
                 parsed.event_id,
                 result.success,
+                result.reply_sent,
                 result.actions[0].action_type.value if result.actions else None,
             )
         except Exception:

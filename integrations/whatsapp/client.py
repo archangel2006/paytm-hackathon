@@ -80,9 +80,16 @@ def _send_with_retry(payload: dict) -> SendResult:
             except ValueError:
                 error = {}
             if not is_retryable_status(response.status_code):
+                error_code = map_wa_error(error.get("code"))
+                logger.error(
+                    "WhatsApp API rejected message status=%s code=%s error=%s",
+                    response.status_code,
+                    error_code,
+                    error.get("message", response.text[:200]),
+                )
                 return SendResult(
                     ok=False,
-                    error_code=map_wa_error(error.get("code")),
+                    error_code=error_code,
                     error_detail=error.get("message", response.text[:200]),
                 )
             last_error = f"HTTP {response.status_code}"

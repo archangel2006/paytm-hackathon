@@ -6,6 +6,7 @@ from __future__ import annotations
 
 # Known error codes from the WhatsApp Cloud API documentation.
 _WA_ERROR_MAP: dict[int, str] = {
+    190: "WHATSAPP_AUTH_EXPIRED",  # expired or invalid access token
     131047: "WINDOW_CLOSED",       # outside 24-hour window
     131030: "RECIPIENT_NOT_ALLOWED",  # not on the test allowed list
     132000: "TEMPLATE_PARAM_MISMATCH",

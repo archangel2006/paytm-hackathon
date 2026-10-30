@@ -138,7 +138,11 @@ def evaluate(
         )
 
     # 1c. Daily message rate limit (outbound only)
-    if action in _outbound_actions and context.counters.messages_today >= settings.MAX_MESSAGES_PER_DAY:
+    if (
+        action in _outbound_actions
+        and settings.MAX_MESSAGES_PER_DAY > 0
+        and context.counters.messages_today >= settings.MAX_MESSAGES_PER_DAY
+    ):
         notes.append(
             f"Daily message limit reached ({settings.MAX_MESSAGES_PER_DAY} messages today)."
         )
@@ -249,4 +253,3 @@ def evaluate(
         notes=notes,
         status=ActionStatus.PROPOSED,
     )
-

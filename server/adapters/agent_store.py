@@ -271,11 +271,21 @@ class AgentStoreAdapter:
             for document in documents
         ]
 
+        direction_map = {
+            "in": "in",
+            "inbound": "in",
+            "out": "out",
+            "outbound": "out",
+        }
         recent_messages = [
             AgentMessageView(
                 id=message.id,
-                direction=message.direction,
-                channel=Channel(message.channel),
+                direction=direction_map[message.direction],
+                channel=Channel(
+                    message.channel.split(".", 1)[-1].lower()
+                    if isinstance(message.channel, str)
+                    else message.channel
+                ),
                 kind=message.kind,
                 text=message.text,
                 intent=message.intent,
@@ -339,7 +349,7 @@ class AgentStoreAdapter:
         status: str = "executed",
         guardrail_notes: Optional[List[str]] = None,
         prompt_version: str = "v1.0"
-    ) -> ActionSummary:
+    ) -> str:
         act = self.repo.save_action(
             merchant_id=merchant_id,
             action_type=action_type,
@@ -352,26 +362,20 @@ class AgentStoreAdapter:
             guardrail_notes=guardrail_notes,
             prompt_version=prompt_version
         )
-        return ActionSummary(
-            id=act.id,
-            merchant_id=act.merchant_id,
-            action_type=act.action_type,
-            status=act.status,
-            autonomy_level=act.autonomy_level,
-            reasoning=act.reasoning,
-            confidence=act.confidence
-        )
+        return act.id
 
     def update_action_status(
         self,
         action_id: str,
         status: str,
+        executed_at: Optional[datetime] = None,
         approved_by: Optional[str] = None,
         rejection_reason: Optional[str] = None
     ) -> Optional[ActionSummary]:
         act = self.repo.update_action_status(
             action_id=action_id,
             status=status,
+            executed_at=executed_at,
             approved_by=approved_by,
             rejection_reason=rejection_reason
         )

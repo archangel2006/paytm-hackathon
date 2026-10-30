@@ -136,6 +136,14 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
         store=store,
         now=clock.now(),
     )
+    logger.info(
+        "Guardrail decision merchant_id=%s action=%s verdict=%s status=%s notes=%s",
+        merchant.id,
+        decision.action.value,
+        guard_res.verdict,
+        guard_res.status.value,
+        guard_res.notes,
+    )
 
     # 9. Save action
     action_id = store.save_action(

@@ -106,13 +106,29 @@ def _call_anthropic(prompt: str, timeout_s: float, json_mode: bool) -> tuple[str
 def _call_gemini(prompt: str, timeout_s: float, json_mode: bool) -> tuple[str, dict]:
     """Call Google Gemini API."""
     try:
-        import google.generativeai as genai  # type: ignore
+        from google import genai  # type: ignore
+        from google.genai import types  # type: ignore
     except ImportError:
-        raise LLMUnavailable("google-generativeai package not installed")
+        raise LLMUnavailable("google-genai package not installed")
 
-    genai.configure(api_key=settings.LLM_API_KEY)
-    model = genai.GenerativeModel(settings.LLM_MODEL)
-    resp = model.generate_content(prompt)
+    logger.info(
+        "Starting Gemini request model=%s timeout_seconds=%s json_mode=%s",
+        settings.LLM_MODEL,
+        timeout_s,
+        json_mode,
+    )
+    client = genai.Client(
+        api_key=settings.LLM_API_KEY,
+        http_options=types.HttpOptions(timeout=max(10_000, int(timeout_s * 1000))),
+    )
+    resp = client.models.generate_content(
+        model=settings.LLM_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=settings.LLM_TEMPERATURE,
+            response_mime_type="application/json" if json_mode else None,
+        ),
+    )
     content = resp.text or ""
     return content, {}
 
@@ -223,4 +239,3 @@ def _extract_json(content: str) -> str:
         inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
         content = "\n".join(inner).strip()
     return content
-
