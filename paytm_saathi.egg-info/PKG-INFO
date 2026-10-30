@@ -15,6 +15,7 @@ Requires-Dist: numpy>=1.26.0
 Requires-Dist: opencv-python-headless>=4.9
 Requires-Dist: pytest>=8.0.0
 Requires-Dist: openai>=1.0.0
+Requires-Dist: google-genai>=1.0.0
 
 # Paytm Saathi: Platform & Backend API
 

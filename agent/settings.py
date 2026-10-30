@@ -38,6 +38,7 @@ _load_local_env()
 MAX_CONTACT_ATTEMPTS: int = int(os.getenv("MAX_CONTACT_ATTEMPTS", "3"))
 MAX_ACTIVATION_NUDGES: int = int(os.getenv("MAX_ACTIVATION_NUDGES", "2"))
 MAX_DOC_REREQUESTS: int = int(os.getenv("MAX_DOC_REREQUESTS", "2"))
+# Set to 0 (or a negative value) to disable the daily outbound limit.
 MAX_MESSAGES_PER_DAY: int = int(os.getenv("MAX_MESSAGES_PER_DAY", "3"))
 
 # ── Quiet hours (24-hour clock, local timezone) ───────────────

@@ -9,6 +9,7 @@ Handles:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from agent import settings
@@ -32,6 +33,24 @@ from agent.ports import (
     Store,
 )
 from agent.tools import impl as tools
+
+logger = logging.getLogger(__name__)
+
+
+def _message_was_sent(result: Any) -> bool:
+    """Read the underlying SendResult from the send_whatsapp tool wrapper."""
+    if not result.ok:
+        logger.warning("send_whatsapp tool failed: %s", result.error)
+        return False
+    sent = result.data.get("ok")
+    if sent is False:
+        logger.warning(
+            "WhatsApp message was not sent: code=%s detail=%s",
+            result.data.get("error_code"),
+            result.data.get("error_detail"),
+        )
+        return False
+    return bool(sent)
 
 
 def execute(
@@ -85,7 +104,7 @@ def execute(
             text, t_name, t_params = templates.render(
                 "saathi_holding_discount", owner_name=merchant.owner_name
             )
-            tools.send_whatsapp(
+            res = tools.send_whatsapp(
                 merchant_id=merchant_id,
                 channel=channel,
                 store=store,
@@ -94,7 +113,7 @@ def execute(
                 template_name=t_name,
                 template_params=t_params,
             )
-            return True, merchant.state
+            return _message_was_sent(res), merchant.state
         return False, merchant.state
 
     # 3. Escalate (Handoff to human)
@@ -118,7 +137,7 @@ def execute(
             owner_name=merchant.owner_name,
             fse_name="our executive",
         )
-        tools.send_whatsapp(
+        res = tools.send_whatsapp(
             merchant_id=merchant_id,
             channel=channel,
             store=store,
@@ -127,14 +146,15 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
+        reply_sent = _message_was_sent(res)
 
         # If escalation happened due to idle device, move to AT_RISK
         if "activation" in str(reason).lower() or context.counters.nudges_sent >= settings.MAX_ACTIVATION_NUDGES:
             if merchant.state in (LifecycleState.ACTIVATING, LifecycleState.INSTALLED):
                 store.update_state(merchant_id, LifecycleState.AT_RISK, reason="Activation nudges failed")
-                return True, LifecycleState.AT_RISK
+                return reply_sent, LifecycleState.AT_RISK
 
-        return True, merchant.state
+        return reply_sent, merchant.state
 
     # 4. Run (L3 Autonomous Execution)
     reply_sent = False
@@ -152,7 +172,7 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_was_sent(res)
         if merchant.state == LifecycleState.NEW:
             store.update_state(merchant_id, LifecycleState.CONTACTED, reason="Intro message sent")
             new_state = LifecycleState.CONTACTED
@@ -177,7 +197,7 @@ def execute(
             text=text,
             language=lang,
         )
-        reply_sent = res.ok
+        reply_sent = _message_was_sent(res)
         store.write_audit(
             actor="agent",
             event_type="policy_referenced",
@@ -199,7 +219,7 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_was_sent(res)
         if merchant.state == LifecycleState.ENGAGED:
             store.update_state(merchant_id, LifecycleState.DOCS_PENDING, reason="Documents requested")
             new_state = LifecycleState.DOCS_PENDING
@@ -218,7 +238,7 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_was_sent(res)
 
     elif action == ActionType.SCHEDULE_VISIT:
         v_res = tools.schedule_visit(
@@ -245,7 +265,7 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_was_sent(res)
         new_state = LifecycleState.VISIT_SCHEDULED
 
     elif action == ActionType.SEND_ACTIVATION_NUDGE:
@@ -262,7 +282,7 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_was_sent(res)
 
     elif action == ActionType.EXPLAIN_SETTLEMENT:
         settlement_res = tools.check_settlement(merchant_id=merchant_id, store=store)
@@ -297,7 +317,7 @@ def execute(
                 template_name=t_name,
                 template_params=t_params,
             )
-            reply_sent = res.ok
+            reply_sent = _message_was_sent(res)
         else:
             # Escalate if settlement not found
             tools.escalate_to_human(
@@ -323,7 +343,7 @@ def execute(
                 template_name=t_name,
                 template_params=t_params,
             )
-            reply_sent = res.ok
+            reply_sent = _message_was_sent(res)
 
     elif action == ActionType.CLOSE_LEAD:
         if merchant.state in (LifecycleState.NEW, LifecycleState.ENGAGED, LifecycleState.CONTACTED):
@@ -344,4 +364,3 @@ def execute(
     )
 
     return reply_sent, new_state
-

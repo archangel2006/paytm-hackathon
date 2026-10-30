@@ -555,6 +555,7 @@ class PlatformRepo:
         self,
         action_id: str,
         status: str,
+        executed_at: Optional[datetime] = None,
         approved_by: Optional[str] = None,
         rejection_reason: Optional[str] = None
     ) -> Optional[AgentAction]:
@@ -562,9 +563,12 @@ class PlatformRepo:
         if not action:
             return None
         action.status = status
+        if executed_at is not None:
+            action.executed_at = executed_at
         if approved_by:
             action.approved_by = approved_by
-            action.executed_at = clock.now()
+            if executed_at is None:
+                action.executed_at = clock.now()
         if rejection_reason:
             action.rejection_reason = rejection_reason
         self.db.commit()
