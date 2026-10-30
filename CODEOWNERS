@@ -1,0 +1,5 @@
+# Code ownership by component
+/agent/         @person2
+/integrations/  @person1
+*               @person3
+

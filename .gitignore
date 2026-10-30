@@ -1,1 +1,31 @@
 presentation-docs
+
+# Python virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Database files (runtime — seed.db is committed, runtime db is not)
+saathi.db
+
+# Environment variables (keep .env.example, ignore actual .env)
+.env
+server/.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node
+frontend/node_modules/
+frontend/.next/
+
+# Logs
+*.log

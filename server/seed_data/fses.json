@@ -1,0 +1,31 @@
+[
+  {
+    "id": "fse_1",
+    "name": "Amit Sharma",
+    "zone": "Delhi North",
+    "start_lat": 28.7041,
+    "start_lng": 77.1025
+  },
+  {
+    "id": "fse_2",
+    "name": "Rohan Gupta",
+    "zone": "Delhi South",
+    "start_lat": 28.5355,
+    "start_lng": 77.2410
+  },
+  {
+    "id": "fse_3",
+    "name": "Priya Verma",
+    "zone": "Noida",
+    "start_lat": 28.5700,
+    "start_lng": 77.3200
+  },
+  {
+    "id": "fse_4",
+    "name": "Vikas Yadav",
+    "zone": "Gurugram",
+    "start_lat": 28.4595,
+    "start_lng": 77.0266
+  }
+]
+
