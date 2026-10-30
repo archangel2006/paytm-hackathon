@@ -1,1 +1,2 @@
-# Agent domain sub-package.
+# agent/domain/__init__.py
+
