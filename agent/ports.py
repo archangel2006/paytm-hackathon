@@ -70,7 +70,9 @@ class SendResult(BaseModel):
 class ProfileForKyc(BaseModel):
     """Merchant profile passed to the document checker."""
     owner_name: str
-    shop_name: str
+    shop_name: str = ""
+    merchant_id: str | None = None
+    phone_e164: str | None = None
 
 
 class DocValidationResult(BaseModel):
@@ -391,3 +393,4 @@ class Store(Protocol):
         run_at: datetime,
     ) -> None:
         ...
+
