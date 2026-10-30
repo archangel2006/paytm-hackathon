@@ -36,12 +36,19 @@ py -3.13 -m venv .venv
 pip install -e .
 ```
 
+For OCR on arbitrary uploaded documents, install the native Tesseract OCR
+executable and make sure `tesseract` is available on `PATH`. The Python
+`pytesseract` package is installed with the project, but it does not include
+the native executable. Synthetic demo documents have a deterministic fallback
+when Tesseract is unavailable; other images will be reported as unreadable.
+
 ### 2. Seed Database
 Seeds 306 synthetic merchants (including the 6 demo heroes) and creates an instantaneous reset snapshot (`saathi.seed.db`):
 ```bash
 python -m server.db.seed
 # or: make seed
 ```
+Farida Sweets is the fully onboarded example, with approved synthetic PAN and address-proof records, a completed field visit, an active device, and 42 successful transactions.
 
 ### 3. Run FastAPI Backend
 ```bash
@@ -49,6 +56,46 @@ python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
 # or: make dev
 ```
 Interactive Swagger docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+#### Configure Gemini for the simulator
+
+The Gemini Developer API key and model are read server-side from `agent/.env`.
+That file is ignored by Git; never commit or share it. Example settings:
+
+```env
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-flash-lite-latest
+LLM_API_KEY=<your Gemini API key>
+LLM_TIMEOUT_SECONDS=15
+```
+
+The timeout leaves headroom above Gemini's 10-second minimum request deadline.
+When Gemini is configured, low-confidence chat requests use it for intent,
+planning, and policy-grounded reply generation. If Gemini is unavailable, the
+agent falls back to the retrieved policy text. The simulator does not send real
+WhatsApp messages without separate WhatsApp Business credentials.
+Install the declared dependencies with `pip install -e .`, then restart the
+backend so it loads the new environment settings. Verify
+`http://localhost:8000/api/health` reports `llm_configured: true`, then send a
+test message in the simulator. This connects Gemini to the app's agent; it does
+not enable real WhatsApp delivery, which requires separate WhatsApp Business
+Platform credentials and webhook configuration.
+
+### 4. Run the Frontend
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000). The frontend uses a
+same-origin Next.js API proxy to connect to the backend at
+`http://127.0.0.1:8000` by default. To use another backend, set
+`SAATHI_BACKEND_URL` in the frontend server environment (the value is the
+backend origin, without `/api`). If the backend has `SAATHI_API_KEY` configured,
+set the same key in the frontend server environment; it is forwarded server-side
+and is never exposed to browser JavaScript. Do not use a `NEXT_PUBLIC_` variable
+for API credentials. Frontend checks: `npm test`, `npm run lint`, and
+`npm run build`.
 
 ---
 
@@ -113,4 +160,3 @@ python scripts/check_ownership.py
 | `GET` | `/api/events` | Polling fallback for live events |
 
 The complete OpenAPI 3.1 specification is maintained in [`docs/openapi.json`](docs/openapi.json).
-

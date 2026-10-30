@@ -33,6 +33,7 @@ class DocsView(BaseModel):
     pan_issues: list[str] = []
     address_status: str = "not_submitted"
     address_attempts: int = 0
+    address_issues: list[str] = []
     all_verified: bool = False
 
 
@@ -75,6 +76,7 @@ class Context(BaseModel):
                 "pan_attempts": self.docs.pan_attempts,
                 "pan_issues": self.docs.pan_issues,
                 "address": self.docs.address_status,
+                "address_issues": self.docs.address_issues,
             },
             "activity": {
                 "txn_count": self.activity.txn_count,
@@ -103,9 +105,11 @@ def _build_docs_view(documents: list[DocumentView]) -> DocsView:
             return "not_submitted"
         if doc.precheck_passed and doc.kyc_status == "approved":
             return "verified"
-        if doc.precheck_passed:
-            return "precheck_passed"
-        if doc.quality and doc.quality != "ok":
+        if (
+            not doc.precheck_passed
+            or doc.kyc_status == "rejected"
+            or (doc.quality and doc.quality != "ok")
+        ):
             return "failed"
         return "pending"
 
@@ -115,9 +119,10 @@ def _build_docs_view(documents: list[DocumentView]) -> DocsView:
         pan_issues=pan_doc.issues if pan_doc else [],
         address_status=_status(addr_doc),
         address_attempts=addr_doc.attempts if addr_doc else 0,
+        address_issues=addr_doc.issues if addr_doc else [],
         all_verified=(
-            (pan_doc is not None and pan_doc.precheck_passed)
-            and (addr_doc is not None and addr_doc.precheck_passed)
+            (pan_doc is not None and pan_doc.precheck_passed and pan_doc.kyc_status == "approved")
+            and (addr_doc is not None and addr_doc.precheck_passed and addr_doc.kyc_status == "approved")
         ),
     )
 
@@ -143,4 +148,3 @@ def build(bundle: ContextBundle, now: datetime) -> Context:
         now=now,
         visits=bundle.visits,
     )
-

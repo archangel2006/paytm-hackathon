@@ -18,13 +18,20 @@ def extract_text(gray: np.ndarray) -> str:
     """
     try:
         import pytesseract
+    except ImportError:
+        logger.warning("pytesseract is unavailable; OCR cannot be performed")
+        return ""
 
+    try:
         text = pytesseract.image_to_string(
             gray,
             lang="eng",
             config="--psm 6",  # page segmentation mode 6: uniform block
         )
         return text.strip()
+    except pytesseract.TesseractNotFoundError:
+        logger.warning("Tesseract executable is unavailable; OCR cannot be performed")
+        return ""
     except Exception:
         logger.exception("OCR failed")
         return ""

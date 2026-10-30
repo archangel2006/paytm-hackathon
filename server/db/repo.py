@@ -1,6 +1,7 @@
 import math
 import os
 import time
+import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Set, Tuple
 from sqlalchemy import func, or_, and_, desc
@@ -154,7 +155,7 @@ class PlatformRepo:
         fse = self.db.query(FSE).first()
         fse_id = fse.id if fse else None
 
-        short_id = f"m_{phone_e164[-8:]}" if len(phone_e164) >= 8 else f"m_{int(clock.now().timestamp())}"
+        short_id = f"m_{uuid.uuid4().hex[:12]}"
         merchant = Merchant(
             id=short_id,
             shop_name=shop_name or f"Shop {phone_e164[-4:]}",
@@ -200,6 +201,7 @@ class PlatformRepo:
         if not merchant:
             raise ValueError(f"Merchant {merchant_id} not found")
 
+        new_state = new_state.value if hasattr(new_state, "value") else str(new_state)
         old_state = merchant.state
         if not is_legal_transition(old_state, new_state):
             raise ValueError(f"Illegal state transition from {old_state} to {new_state}")
@@ -250,6 +252,8 @@ class PlatformRepo:
         intent: Optional[str] = None,
         sentiment: Optional[float] = None
     ) -> Message:
+        direction = direction.value if hasattr(direction, "value") else str(direction)
+        channel = channel.value if hasattr(channel, "value") else str(channel)
         if event_id:
             existing = self.db.query(Message).filter(Message.event_id == event_id).first()
             if existing:
@@ -259,7 +263,7 @@ class PlatformRepo:
         if direction == "out" and slow_mode_enabled:
             time.sleep(0.25)
 
-        msg_id = f"msg_{int(clock.now().timestamp()*1000)}"
+        msg_id = f"msg_{uuid.uuid4().hex}"
         message = Message(
             id=msg_id,
             merchant_id=merchant_id,
@@ -371,7 +375,7 @@ class PlatformRepo:
         slot_start: datetime,
         cluster_size: int = 1
     ) -> Visit:
-        visit_id = f"vis_{merchant_id}_{int(clock.now().timestamp())}"
+        visit_id = f"vis_{merchant_id}_{uuid.uuid4().hex[:12]}"
         visit = Visit(
             id=visit_id,
             merchant_id=merchant_id,
@@ -414,7 +418,35 @@ class PlatformRepo:
     def get_device(self, merchant_id: str) -> Optional[Device]:
         return self.db.query(Device).filter(Device.merchant_id == merchant_id).first()
 
+    def _required_documents_approved(self, merchant_id: str) -> bool:
+        documents = self.get_documents(merchant_id)
+        latest_by_type: Dict[str, Document] = {}
+        for document in sorted(
+            documents,
+            key=lambda item: (item.created_at.isoformat() if item.created_at else "", item.id),
+        ):
+            latest_by_type[document.doc_type] = document
+        return all(
+            latest_by_type.get(doc_type) is not None
+            and latest_by_type[doc_type].precheck_passed
+            and latest_by_type[doc_type].kyc_status == "approved"
+            for doc_type in ("pan", "address_proof")
+        )
+
     def record_device_installed(self, merchant_id: str) -> Device:
+        merchant = self.get_merchant(merchant_id)
+        if merchant is None:
+            raise ValueError(f"Merchant {merchant_id} not found")
+        if merchant.state != "VISIT_SCHEDULED" or not self._required_documents_approved(merchant_id):
+            raise ValueError("Device installation requires approved PAN and address documents and a scheduled field visit.")
+        visit = self.db.query(Visit).filter(
+            Visit.merchant_id == merchant_id,
+            Visit.status == "scheduled",
+        ).order_by(desc(Visit.created_at), desc(Visit.id)).first()
+        if visit is None:
+            raise ValueError("Device installation requires an active scheduled field visit.")
+        visit.status = "done"
+
         device = self.get_device(merchant_id)
         if not device:
             device = Device(
@@ -429,13 +461,9 @@ class PlatformRepo:
             device.installed_at = clock.now()
 
         # Update merchant state: INSTALLED -> ACTIVATING
-        merchant = self.get_merchant(merchant_id)
-        if merchant and merchant.state == "VISIT_SCHEDULED":
+        if merchant.state == "VISIT_SCHEDULED":
             self.update_state(merchant_id, "INSTALLED", "Device installed")
             self.update_state(merchant_id, "ACTIVATING", "Ready for first transaction")
-        elif merchant and merchant.state not in ("ACTIVATING", "ACTIVATED"):
-            merchant.state = "ACTIVATING"
-            merchant.state_updated_at = clock.now()
 
         # Schedule activation check job 24h later
         self.schedule_job(merchant_id, "activation_check", clock.now() + timedelta(hours=24))
@@ -445,15 +473,37 @@ class PlatformRepo:
         return device
 
     def record_transactions(self, merchant_id: str, count: int = 1, amount_per_txn: float = 150.0) -> int:
+        merchant = self.get_merchant(merchant_id)
         device = self.get_device(merchant_id)
-        if not device:
-            device = self.record_device_installed(merchant_id)
+        completed_visit = self.db.query(Visit).filter(
+            Visit.merchant_id == merchant_id,
+            Visit.status == "done",
+        ).first()
+        if (
+            merchant is None
+            or merchant.state != "ACTIVATING"
+            or not self._required_documents_approved(merchant_id)
+            or completed_visit is None
+            or device is None
+            or device.status not in ("installed", "active")
+        ):
+            raise ValueError(
+                "Transactions require approved PAN and address documents, a completed field visit, and an installed device."
+            )
+        if count < 1:
+            raise ValueError("Transaction count must be at least one.")
 
         import uuid
         now = clock.now()
         existing_txns = self.db.query(Transaction).filter(
             Transaction.merchant_id == merchant_id
         ).count()
+        successful_txns = self.db.query(Transaction).filter(
+            Transaction.merchant_id == merchant_id,
+            Transaction.status == "success",
+        ).count()
+        if successful_txns >= 10:
+            raise ValueError("The merchant has already reached the 10-transaction activation goal.")
         for i in range(count):
             txn = Transaction(
                 id=f"txn_{merchant_id}_{existing_txns + i}_{uuid.uuid4().hex[:6]}",
@@ -467,14 +517,10 @@ class PlatformRepo:
         if not device.first_txn_at:
             device.first_txn_at = now
 
-        total_txns = self.db.query(Transaction).filter(
-            Transaction.merchant_id == merchant_id,
-            Transaction.status == "success"
-        ).count() + count
+        total_txns = successful_txns + count
 
         if total_txns >= 10:
             device.status = "active"
-            merchant = self.get_merchant(merchant_id)
             if merchant and merchant.state == "ACTIVATING":
                 self.update_state(merchant_id, "ACTIVATED", "Reached 10 successful transactions")
 
@@ -505,7 +551,10 @@ class PlatformRepo:
         guardrail_notes: Optional[List[str]] = None,
         prompt_version: str = "v1.0"
     ) -> AgentAction:
-        action_id = f"act_{int(clock.now().timestamp()*1000)}"
+        action_type = action_type.value if hasattr(action_type, "value") else str(action_type)
+        autonomy_level = autonomy_level.value if hasattr(autonomy_level, "value") else str(autonomy_level)
+        status = status.value if hasattr(status, "value") else str(status)
+        action_id = f"act_{uuid.uuid4().hex}"
         executed_at = clock.now() if status == "executed" else None
         action = AgentAction(
             id=action_id,
@@ -556,14 +605,19 @@ class PlatformRepo:
         action_id: str,
         status: str,
         approved_by: Optional[str] = None,
-        rejection_reason: Optional[str] = None
+        rejection_reason: Optional[str] = None,
+        executed_at: Optional[datetime] = None
     ) -> Optional[AgentAction]:
         action = self.db.query(AgentAction).filter(AgentAction.id == action_id).first()
         if not action:
             return None
+        status = status.value if hasattr(status, "value") else str(status)
         action.status = status
         if approved_by:
             action.approved_by = approved_by
+        if executed_at is not None:
+            action.executed_at = executed_at
+        elif status in ("approved", "executed"):
             action.executed_at = clock.now()
         if rejection_reason:
             action.rejection_reason = rejection_reason
@@ -602,7 +656,8 @@ class PlatformRepo:
         reason: str,
         summary: Dict[str, Any]
     ) -> Handoff:
-        handoff_id = f"ho_{int(clock.now().timestamp()*1000)}"
+        target = target.value if hasattr(target, "value") else str(target)
+        handoff_id = f"ho_{uuid.uuid4().hex}"
         handoff = Handoff(
             id=handoff_id,
             merchant_id=merchant_id,
@@ -616,7 +671,7 @@ class PlatformRepo:
         self.db.add(handoff)
 
         # Also create a ticket
-        ticket_id = f"tkt_{int(clock.now().timestamp()*1000)}"
+        ticket_id = f"tkt_{uuid.uuid4().hex}"
         ticket = Ticket(
             id=ticket_id,
             merchant_id=merchant_id,
@@ -680,6 +735,7 @@ class PlatformRepo:
     # Autonomy Config
     # ----------------------------------------------------
     def get_autonomy_level(self, action_type: str) -> str:
+        action_type = action_type.value if hasattr(action_type, "value") else str(action_type)
         row = self.db.query(AutonomyConfig).filter(AutonomyConfig.action_type == action_type).first()
         if row:
             return row.level
@@ -745,7 +801,7 @@ class PlatformRepo:
     # Scheduled Jobs
     # ----------------------------------------------------
     def schedule_job(self, merchant_id: str, reason: str, run_at: datetime) -> ScheduledJob:
-        job_id = f"job_{merchant_id}_{int(run_at.timestamp())}"
+        job_id = f"job_{merchant_id}_{int(run_at.timestamp())}_{uuid.uuid4().hex[:8]}"
         job = ScheduledJob(
             id=job_id,
             merchant_id=merchant_id,

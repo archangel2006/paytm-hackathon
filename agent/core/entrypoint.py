@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from agent import settings
 from agent.core import context_builder, executor, guardrails, nlu, planner, scoring
+from agent.core.llm_client import LLMUnavailable, generate_text
 from agent.domain.enums import (
     ActionStatus,
     ActionType,
@@ -23,6 +24,8 @@ from agent.domain.enums import (
     Language,
     LifecycleState,
 )
+from agent.policy.retrieval import search_policy
+from agent.prompts import reply_prompt
 from agent.ports import (
     ActionSummary,
     AgentResult,
@@ -64,6 +67,40 @@ def _get_ports() -> tuple[Store, Channel, DocumentChecker, Clock]:
     return _STORE, _CHANNEL, _DOCUMENTS, _CLOCK
 
 
+def _prepare_query_reply(
+    query: str,
+    merchant_name: str,
+    language: Language,
+) -> tuple[str, dict[str, list[str]]]:
+    passages = search_policy(query, language=language.value)
+    tool_outputs = {"policy": [passage.text for passage in passages]}
+    if not passages:
+        return (
+            f"Hello, thank you for reaching out. I couldn't find verified information for that question.",
+            tool_outputs,
+        )
+
+    prompt = reply_prompt.build(
+        merchant_name=merchant_name,
+        language=language.value,
+        question=query,
+        passages=[
+            {"source": passage.source, "text": passage.text}
+            for passage in passages
+        ],
+    )
+    try:
+        reply = generate_text(prompt).strip()
+    except LLMUnavailable as exc:
+        logger.warning("LLM reply generation failed; using grounded policy text: %s", exc)
+        reply = ""
+
+    if not reply:
+        logger.warning("LLM returned an empty reply; using grounded policy text.")
+        reply = f"Regarding {merchant_name}: {passages[0].text}"
+    return reply, tool_outputs
+
+
 def handle_incoming(event: IncomingEvent) -> AgentResult:
     """Full loop for one incoming event (message, media upload, etc.)."""
     store, channel, doc_checker, clock = _get_ports()
@@ -87,7 +124,7 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
     # 3. Handle document media if kind == media
     doc_id: str | None = None
     if event.kind == "media" and event.media_path:
-        doc_type = DocType.PAN
+        doc_type = event.document_type
         doc_id = store.save_document(merchant.id, doc_type, event.media_path)
         val_res = tools.validate_kyc_doc(
             document_id=doc_id,
@@ -97,14 +134,19 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
             doc_checker=doc_checker,
             store=store,
         )
-        if val_res.ok and val_res.data.get("validation", {}).get("precheck_passed"):
+        if val_res.ok:
+            bundle = store.get_context_bundle(merchant.id)
+            docs = context_builder.build(bundle, now=clock.now()).docs
+        else:
+            docs = None
+        if docs is not None and docs.all_verified:
             store.update_state(merchant.id, LifecycleState.DOCS_VERIFIED, reason="KYC precheck passed")
 
     # 4. Save incoming message
     store.save_message(
         merchant_id=merchant.id,
         direction="in",
-        channel=str(event.channel),
+        channel=event.channel.value,
         kind=event.kind,
         text=event.text,
         event_id=event.event_id,
@@ -127,14 +169,36 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
         nlu=nlu_res,
         event_kind=event.kind,
         event_media_path=event.media_path,
+        event_document_type=event.document_type,
     )
+    reply_text = ""
+    tool_outputs: dict[str, list[str]] = {}
+    if decision.action == ActionType.ANSWER_QUERY and event.text:
+        decision.params = {**decision.params, "query": event.text}
+        reply_text, tool_outputs = _prepare_query_reply(
+            query=event.text,
+            merchant_name=merchant.shop_name,
+            language=decision.language,
+        )
+        decision.params = {**decision.params, "reply_text": reply_text}
+        if not tool_outputs.get("policy"):
+            decision = decision.model_copy(update={
+                "action": ActionType.ESCALATE,
+                "params": {"target": "support", "reason": "unsupported_policy_question"},
+                "reasoning": "No verified policy answer was found. Routing the question to a human advisor.",
+                "source": "rule",
+            })
+            reply_text = ""
+            tool_outputs = {}
 
     # 8. Guardrails
     guard_res = guardrails.evaluate(
         decision=decision,
         context=ctx,
         store=store,
+        tool_outputs=tool_outputs,
         now=clock.now(),
+        proposed_text=reply_text,
     )
 
     # 9. Save action
@@ -151,7 +215,7 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
     )
 
     # 10. Execute
-    reply_sent, state_after = executor.execute(
+    reply_sent, state_after, execution_status = executor.execute(
         decision=decision,
         guardrail_res=guard_res,
         action_id=action_id,
@@ -165,7 +229,7 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
     summary = ActionSummary(
         id=action_id,
         action_type=decision.action,
-        status=guard_res.status if guard_res.verdict == "hold" else ActionStatus.EXECUTED,
+        status=execution_status,
         autonomy_level=guard_res.autonomy_level,
         reasoning=decision.reasoning,
     )
@@ -215,7 +279,7 @@ def handle_timer(merchant_id: str, reason: str) -> AgentResult:
         prompt_version=settings.PROMPT_VERSION,
     )
 
-    reply_sent, state_after = executor.execute(
+    reply_sent, state_after, execution_status = executor.execute(
         decision=decision,
         guardrail_res=guard_res,
         action_id=action_id,
@@ -232,7 +296,7 @@ def handle_timer(merchant_id: str, reason: str) -> AgentResult:
             ActionSummary(
                 id=action_id,
                 action_type=decision.action,
-                status=guard_res.status if guard_res.verdict == "hold" else ActionStatus.EXECUTED,
+                status=execution_status,
                 autonomy_level=guard_res.autonomy_level,
                 reasoning=decision.reasoning,
             )
@@ -244,9 +308,59 @@ def handle_timer(merchant_id: str, reason: str) -> AgentResult:
 
 def run_batch(limit: int = 120) -> list[AgentResult]:
     """Overnight batch processing of leads."""
-    store, _, _, _ = _get_ports()
+    store, channel, doc_checker, clock = _get_ports()
     results = []
-    # Process high scoring leads or pending contacts
+    for merchant in store.list_merchants(state=LifecycleState.NEW, limit=limit):
+        bundle = store.get_context_bundle(merchant.id)
+        ctx = context_builder.build(bundle, now=clock.now())
+        decision = planner.decide(
+            context=ctx,
+            nlu=nlu.classify(text=""),
+            event_kind="batch",
+        )
+        guard_res = guardrails.evaluate(
+            decision=decision,
+            context=ctx,
+            store=store,
+            now=clock.now(),
+        )
+        action_id = store.save_action(
+            merchant_id=merchant.id,
+            action_type=decision.action,
+            params=decision.params,
+            reasoning=decision.reasoning,
+            confidence=decision.confidence,
+            source=decision.source,
+            autonomy_level=guard_res.autonomy_level,
+            guardrail_notes=guard_res.notes,
+            prompt_version=settings.PROMPT_VERSION,
+        )
+        reply_sent, state_after, execution_status = executor.execute(
+            decision=decision,
+            guardrail_res=guard_res,
+            action_id=action_id,
+            context=ctx,
+            store=store,
+            channel=channel,
+            doc_checker=doc_checker,
+            clock=clock,
+        )
+        results.append(
+            AgentResult(
+                merchant_id=merchant.id,
+                actions=[
+                    ActionSummary(
+                        id=action_id,
+                        action_type=decision.action,
+                        status=execution_status,
+                        autonomy_level=guard_res.autonomy_level,
+                        reasoning=decision.reasoning,
+                    )
+                ],
+                reply_sent=reply_sent,
+                state_after=state_after,
+            )
+        )
     return results
 
 
@@ -256,7 +370,7 @@ def preview_next_action(merchant_id: str) -> ActionSummary:
     bundle = store.get_context_bundle(merchant_id)
     ctx = context_builder.build(bundle, now=clock.now())
     dummy_nlu = nlu.classify(text="")
-    decision = planner.decide(context=ctx, nlu=dummy_nlu)
+    decision = planner.decide(context=ctx, nlu=dummy_nlu, event_kind="preview")
     guard_res = guardrails.evaluate(decision=decision, context=ctx, store=store, now=clock.now())
     return ActionSummary(
         id="preview",
@@ -302,7 +416,7 @@ def approve_action(action_id: str, by: str, edits: dict | None = None) -> AgentR
         payload={"action_id": action_id},
     )
 
-    reply_sent, state_after = executor.execute(
+    reply_sent, state_after, execution_status = executor.execute(
         decision=decision,
         guardrail_res=guard_res,
         action_id=action_id,
@@ -319,7 +433,7 @@ def approve_action(action_id: str, by: str, edits: dict | None = None) -> AgentR
             ActionSummary(
                 id=action_id,
                 action_type=decision.action,
-                status=ActionStatus.EXECUTED,
+                status=execution_status,
                 autonomy_level=guard_res.autonomy_level,
                 reasoning=decision.reasoning,
             )

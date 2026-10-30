@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from server.settings import settings
 from server.db.session import init_db, SessionLocal
+from server.db.models import DemoState
 from server.api.router import api_router
 from server.adapters.clock import clock
 from server.adapters.agent_store import AgentStoreAdapter
@@ -21,37 +22,33 @@ async def lifespan(app: FastAPI):
     # Startup: ensure tables exist
     init_db()
 
-    # Wire agent and integrations if available
-    db = SessionLocal()
-    try:
-        agent_store = AgentStoreAdapter(db)
-        integ_store = IntegrationsStoreAdapter(db)
+    import agent
+    import integrations
+    from integrations import documents, router
+    from integrations.whatsapp import webhook
 
-        try:
-            import agent
-            import integrations
-            from integrations import documents, router
-            from integrations.whatsapp import webhook
-            agent.configure(
-                store=agent_store,
-                channel=router,
-                documents=documents,
-                clock=clock
-            )
-            integrations.configure(
-                store=integ_store,
-                on_incoming=agent.handle_incoming,
-                clock=clock
-            )
-            scheduler.set_handler(agent.handle_timer)
-            app.include_router(webhook.router)
-            logger.info("Agent and Integrations successfully wired.")
-        except ImportError:
-            logger.exception(
-                "Agent and Integrations could not be wired because an import failed."
-            )
-    finally:
-        db.close()
+    integrations.settings.UPLOAD_DIR = settings.UPLOAD_DIR
+    integrations.settings.MAX_UPLOAD_MB = settings.MAX_UPLOAD_MB
+    agent.configure(
+        store=AgentStoreAdapter(),
+        channel=router,
+        documents=documents,
+        clock=clock
+    )
+    integrations.configure(
+        store=IntegrationsStoreAdapter(),
+        on_incoming=agent.handle_incoming,
+        clock=clock
+    )
+    scheduler.set_handler(agent.handle_timer)
+    app.include_router(webhook.router)
+
+    with SessionLocal() as db:
+        persisted_offset = db.query(DemoState).filter(
+            DemoState.key == "clock_offset_seconds"
+        ).first()
+        clock.offset_seconds = float(persisted_offset.value) if persisted_offset else 0.0
+    logger.info("Agent and Integrations successfully wired.")
 
     # Start background scheduler loop
     scheduler_task = asyncio.create_task(scheduler.start())
@@ -68,6 +65,19 @@ app = FastAPI(
     description="Backend API for Paytm Saathi Autonomous AI Teammate",
     lifespan=lifespan
 )
+
+
+@app.middleware("http")
+async def bind_request_database_session(request: Request, call_next):
+    from server.db.session import bind_session
+
+    db = SessionLocal()
+    try:
+        with bind_session(db):
+            return await call_next(request)
+    finally:
+        db.close()
+
 
 # CORS Middleware
 app.add_middleware(

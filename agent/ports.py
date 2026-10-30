@@ -40,6 +40,7 @@ class IncomingEvent(BaseModel):
     text: str | None = None               # for voice: the transcript
     media_path: str | None = None         # local file path after download
     mime_type: str | None = None
+    document_type: DocType = DocType.PAN
     received_at: datetime
 
 
@@ -256,6 +257,13 @@ class Store(Protocol):
     def get_merchant(self, merchant_id: str) -> MerchantView | None:
         ...
 
+    def list_merchants(
+        self,
+        state: LifecycleState | None = None,
+        limit: int = 120,
+    ) -> list[MerchantView]:
+        ...
+
     def create_lead(
         self,
         phone_e164: str,
@@ -301,6 +309,7 @@ class Store(Protocol):
         self,
         document_id: str,
         result: DocValidationResult,
+        kyc_result: KycResult | None = None,
     ) -> None:
         ...
 

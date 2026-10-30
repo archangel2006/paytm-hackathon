@@ -46,7 +46,7 @@ QUIET_HOUR_END: int = int(os.getenv("QUIET_HOUR_END", "8"))         # 08:00
 
 # ── Planner / NLU ─────────────────────────────────────────────
 MIN_PLANNER_CONFIDENCE: float = float(os.getenv("MIN_PLANNER_CONFIDENCE", "0.6"))
-LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "8.0"))
+LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "15.0"))
 LLM_CACHE: bool = os.getenv("LLM_CACHE", "off").lower() == "on"
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openai")
 LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")

@@ -1,6 +1,8 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Query
+import agent
 from server.api.deps import get_repo, APIError, require_staff_access
+from server.db.models import Merchant
 from server.db.repo import PlatformRepo
 
 router = APIRouter(
@@ -8,6 +10,40 @@ router = APIRouter(
     tags=["merchants"],
     dependencies=[Depends(require_staff_access)],
 )
+
+
+def _successful_transaction_count(merchant: Merchant) -> int:
+    return sum(transaction.status == "success" for transaction in merchant.transactions)
+
+
+def _documents_status(merchant: Merchant) -> str:
+    if not merchant.documents:
+        return "none"
+    latest_by_type = {}
+    for document in sorted(
+        merchant.documents,
+        key=lambda item: (item.created_at.isoformat() if item.created_at else "", item.id),
+    ):
+        latest_by_type[document.doc_type] = document
+    required_documents = [latest_by_type.get(doc_type) for doc_type in ("pan", "address_proof")]
+    if all(
+        document is not None
+        and document.precheck_passed
+        and document.kyc_status == "approved"
+        for document in required_documents
+    ):
+        return "verified"
+    return "pending"
+
+
+def _activation_prerequisites_met(merchant: Merchant) -> bool:
+    return (
+        _documents_status(merchant) == "verified"
+        and any(visit.status == "done" for visit in merchant.visits)
+        and merchant.device is not None
+        and merchant.device.status in {"installed", "active"}
+    )
+
 
 @router.get("")
 def list_merchants(
@@ -41,7 +77,9 @@ def list_merchants(
                 "lead_score": m.lead_score,
                 "fse_id": m.fse_id,
                 "txn_count": len(m.transactions),
-                "docs_status": "verified" if any(d.precheck_passed for d in m.documents) else ("pending" if m.documents else "none")
+                "successful_txn_count": _successful_transaction_count(m),
+                "docs_status": _documents_status(m),
+                "activation_eligible": _activation_prerequisites_met(m),
             }
             for m in items
         ],
@@ -78,6 +116,7 @@ def get_merchant_detail(merchant_id: str, repo: PlatformRepo = Depends(get_repo)
         "score_explanation": m.score_explanation,
         "state": m.state,
         "state_updated_at": m.state_updated_at.isoformat() if m.state_updated_at else None,
+        "successful_txn_count": _successful_transaction_count(m),
         "fse_id": m.fse_id,
         "created_at": m.created_at.isoformat() if m.created_at else None,
         "documents": [
@@ -86,12 +125,16 @@ def get_merchant_detail(merchant_id: str, repo: PlatformRepo = Depends(get_repo)
                 "doc_type": d.doc_type,
                 "quality": d.quality,
                 "sharpness_score": d.sharpness_score,
-                "extracted_pan": d.extracted_pan,
                 "precheck_passed": d.precheck_passed,
                 "attempts": d.attempts,
-                "issues": d.issues or []
+                "issues": d.issues or [],
+                "kyc_status": d.kyc_status,
+                "kyc_reference": d.kyc_reference
             }
-            for d in m.documents
+            for d in sorted(
+                m.documents,
+                key=lambda item: (item.created_at.isoformat() if item.created_at else "", item.id),
+            )
         ],
         "visits": [
             {
@@ -177,46 +220,13 @@ def preview_next_action(merchant_id: str, repo: PlatformRepo = Depends(get_repo)
     if not m:
         raise APIError("NOT_FOUND", f"Merchant {merchant_id} not found", status_code=404)
 
-    # Next action proposal based on state
-    state = m.state
-    if state == "NEW":
-        action_type = "SEND_INTRO"
-        reasoning = f"New lead. Initiate contact in {m.language}."
-    elif state == "CONTACTED":
-        action_type = "ANSWER_QUERY"
-        reasoning = "Lead reached out. Awaiting inquiry."
-    elif state == "ENGAGED":
-        action_type = "REQUEST_DOCS"
-        reasoning = "Merchant interested. Request PAN card and address proof."
-    elif state == "DOCS_PENDING":
-        action_type = "REREQUEST_DOC"
-        reasoning = "Documents pending verification or re-request."
-    elif state == "DOCS_VERIFIED":
-        action_type = "SCHEDULE_VISIT"
-        reasoning = "Documents passed pre-check. Cluster route with nearby merchants."
-    elif state == "VISIT_SCHEDULED":
-        action_type = "WAIT"
-        reasoning = "Visit scheduled. Waiting for FSE to install Soundbox."
-    elif state in ("INSTALLED", "ACTIVATING"):
-        action_type = "SEND_ACTIVATION_NUDGE"
-        reasoning = "Device installed. Nudge merchant to complete first 10 transactions."
-    elif state == "ACTIVATED":
-        action_type = "EXPLAIN_SETTLEMENT"
-        reasoning = "Activated merchant. Ready for daily settlement assistance."
-    elif state == "AT_RISK":
-        action_type = "ESCALATE"
-        reasoning = "Device idle after 2 nudges. Warm handoff to FSE."
-    else:
-        action_type = "WAIT"
-        reasoning = "Lead dormant or closed."
-
-    autonomy_level = repo.get_autonomy_level(action_type)
+    proposal = agent.preview_next_action(merchant_id)
 
     return {
         "merchant_id": merchant_id,
-        "action_type": action_type,
-        "autonomy_level": autonomy_level,
-        "reasoning": reasoning,
+        "action_type": proposal.action_type.value,
+        "autonomy_level": proposal.autonomy_level.value,
+        "reasoning": proposal.reasoning,
         "confidence": 0.90,
         "status": "proposed"
     }

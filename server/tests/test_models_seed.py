@@ -1,7 +1,7 @@
 import pytest
 from server.db.seed import seed_database
 from server.db.session import SessionLocal
-from server.db.models import Merchant, FSE, Base
+from server.db.models import Merchant, FSE, Base, Document, Visit, Device, Transaction
 from server.db.repo import LEGAL_TRANSITIONS
 
 VALID_STATES = set(LEGAL_TRANSITIONS.keys())
@@ -46,3 +46,42 @@ def test_pl01_seed_idempotency_and_counts():
     finally:
         db.close()
 
+
+def test_seed_includes_fully_onboarded_merchant_example():
+    from fastapi.testclient import TestClient
+    from server.main import app
+
+    seed_database()
+    db = SessionLocal()
+    try:
+        merchant = db.query(Merchant).filter(Merchant.id == "m_farida").one()
+        documents = {
+            document.doc_type: document
+            for document in db.query(Document).filter(Document.merchant_id == merchant.id).all()
+        }
+        successful_transactions = db.query(Transaction).filter(
+            Transaction.merchant_id == merchant.id,
+            Transaction.status == "success",
+        ).count()
+
+        assert {"pan", "address_proof"} <= documents.keys()
+        assert all(
+            documents[doc_type].precheck_passed
+            and documents[doc_type].kyc_status == "approved"
+            for doc_type in ("pan", "address_proof")
+        )
+        assert db.query(Visit).filter(
+            Visit.merchant_id == merchant.id,
+            Visit.status == "done",
+        ).count() >= 1
+        assert merchant.device is not None
+        assert merchant.device.status in {"installed", "active"}
+        assert successful_transactions >= 10
+    finally:
+        db.close()
+
+    with TestClient(app) as client:
+        portfolio = client.get("/api/merchants?limit=300").json()
+    farida = next(item for item in portfolio["items"] if item["id"] == "m_farida")
+    assert farida["activation_eligible"] is True
+    assert farida["successful_txn_count"] >= 10

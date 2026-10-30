@@ -44,7 +44,7 @@ class FakeStore:
 
     def save_message(self, merchant_id, direction, channel, kind, text, provider_message_id=None):
         self.messages.append(locals())
-        if direction == "inbound":
+        if direction in {"in", "inbound"}:
             self.inbound = datetime.now(timezone.utc)
             self.last_inbound[merchant_id] = self.inbound
 

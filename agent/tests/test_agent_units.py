@@ -222,6 +222,82 @@ def test_ag_07_policy_search():
     assert len(res_nonsense.data["passages"]) == 0
 
 
+def test_query_reply_uses_gemini_with_retrieved_policy(monkeypatch):
+    from agent.core import entrypoint
+    from agent.policy.retrieval import PolicyPassage
+
+    passage = PolicyPassage(
+        source="fees.md > Soundbox Rental",
+        text="Monthly rental is ₹125.",
+        score=1.0,
+    )
+    captured_prompts = []
+    monkeypatch.setattr(entrypoint, "search_policy", lambda query, language: [passage])
+    monkeypatch.setattr(
+        entrypoint,
+        "generate_text",
+        lambda prompt: captured_prompts.append(prompt) or "The monthly rental is ₹125.",
+    )
+
+    reply, tool_outputs = entrypoint._prepare_query_reply(
+        query="What is the monthly rental?",
+        merchant_name="Test Shop",
+        language=Language.ENGLISH,
+    )
+
+    assert reply == "The monthly rental is ₹125."
+    assert tool_outputs == {"policy": ["Monthly rental is ₹125."]}
+    assert "What is the monthly rental?" in captured_prompts[0]
+    assert "Monthly rental is ₹125." in captured_prompts[0]
+
+
+def test_query_reply_uses_grounded_policy_when_gemini_is_unavailable(monkeypatch):
+    from agent.core import entrypoint
+    from agent.core.llm_client import LLMUnavailable
+    from agent.policy.retrieval import PolicyPassage
+
+    passage = PolicyPassage(
+        source="fees.md > Soundbox Rental",
+        text="Monthly rental is ₹125.",
+        score=1.0,
+    )
+    monkeypatch.setattr(entrypoint, "search_policy", lambda query, language: [passage])
+
+    def fail_generation(prompt):
+        raise LLMUnavailable("provider unavailable")
+
+    monkeypatch.setattr(entrypoint, "generate_text", fail_generation)
+
+    reply, tool_outputs = entrypoint._prepare_query_reply(
+        query="What is the monthly rental?",
+        merchant_name="Test Shop",
+        language=Language.ENGLISH,
+    )
+
+    assert reply == "Regarding Test Shop: Monthly rental is ₹125."
+    assert tool_outputs == {"policy": ["Monthly rental is ₹125."]}
+
+
+def test_query_reply_does_not_invent_when_policy_has_no_match(monkeypatch):
+    from agent.core import entrypoint
+
+    monkeypatch.setattr(entrypoint, "search_policy", lambda query, language: [])
+    monkeypatch.setattr(
+        entrypoint,
+        "generate_text",
+        lambda prompt: pytest.fail("Gemini must not answer without verified policy"),
+    )
+
+    reply, tool_outputs = entrypoint._prepare_query_reply(
+        query="What is an unrelated policy?",
+        merchant_name="Test Shop",
+        language=Language.ENGLISH,
+    )
+
+    assert "couldn't find verified information" in reply
+    assert tool_outputs == {"policy": []}
+
+
 # --- AG-08: Schedule visit cluster size ---
 def test_ag_08_schedule_visit_cluster():
     clock = FixedClock()
@@ -406,3 +482,34 @@ def test_ag_14_quiet_hours():
     assert res.verdict == "block"
     assert res.status == ActionStatus.BLOCKED
 
+
+def test_hinglish_fee_query_retrieves_soundbox_rental_policy():
+    from agent.policy.retrieval import search_policy
+
+    passages = search_policy("Soundbox lena hai, fees kya hain?")
+
+    assert passages
+    assert passages[0].source.startswith("fees.md > Soundbox Rental")
+    assert "125" in passages[0].text
+
+
+def test_failed_outbound_message_is_reported_without_advancing_lead():
+    from agent.core.entrypoint import configure, handle_incoming
+
+    clock = FixedClock()
+    store = FakeStore(clock=clock)
+    configure(store=store, channel=FakeChannel(fail=True), documents=FakeDocs(), clock=clock)
+    event = IncomingEvent(
+        event_id="evt_failed_outbound",
+        channel=Channel.SIMULATOR,
+        kind="text",
+        phone_e164="+919800000099",
+        text="Soundbox fees kya hain?",
+        received_at=clock.now(),
+    )
+
+    result = handle_incoming(event)
+
+    assert result.reply_sent is False
+    assert result.state_after == LifecycleState.NEW
+    assert result.actions[0].status == ActionStatus.FAILED

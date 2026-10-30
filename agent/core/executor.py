@@ -9,6 +9,7 @@ Handles:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from agent import settings
@@ -33,6 +34,22 @@ from agent.ports import (
 )
 from agent.tools import impl as tools
 
+logger = logging.getLogger(__name__)
+
+
+def _message_sent(result: Any) -> bool:
+    if not result.ok:
+        logger.error("Outbound message tool failed: %s", result.error)
+        return False
+    if result.data.get("ok") is not True:
+        logger.error(
+            "Outbound message was not delivered: code=%s detail=%s",
+            result.data.get("error_code"),
+            result.data.get("error_detail"),
+        )
+        return False
+    return True
+
 
 def execute(
     decision: PlannerDecision,
@@ -43,12 +60,12 @@ def execute(
     channel: Channel,
     doc_checker: DocumentChecker,
     clock: Clock,
-) -> tuple[bool, LifecycleState]:
+) -> tuple[bool, LifecycleState, ActionStatus]:
     """
     Executes the action if guardrail verdict is 'run' or handles hold/escalate/block.
 
     Returns:
-        (reply_sent, state_after)
+        (reply_sent, state_after, action_status)
     """
     merchant = context.merchant
     merchant_id = merchant.id
@@ -65,7 +82,7 @@ def execute(
             merchant_id=merchant_id,
             payload={"action": action.value, "notes": guardrail_res.notes},
         )
-        return False, merchant.state
+        return False, merchant.state, ActionStatus.BLOCKED
 
     # 2. Hold (L1 Suggestion or L2 Approval)
     if guardrail_res.verdict == "hold":
@@ -85,7 +102,7 @@ def execute(
             text, t_name, t_params = templates.render(
                 "saathi_holding_discount", owner_name=merchant.owner_name
             )
-            tools.send_whatsapp(
+            send_result = tools.send_whatsapp(
                 merchant_id=merchant_id,
                 channel=channel,
                 store=store,
@@ -94,14 +111,14 @@ def execute(
                 template_name=t_name,
                 template_params=t_params,
             )
-            return True, merchant.state
-        return False, merchant.state
+            return _message_sent(send_result), merchant.state, guardrail_res.status
+        return False, merchant.state, guardrail_res.status
 
     # 3. Escalate (Handoff to human)
     if guardrail_res.verdict == "escalate" or action == ActionType.ESCALATE:
         target = decision.params.get("target", HandoffTarget.FSE)
         reason = decision.params.get("reason", decision.reasoning)
-        tools.escalate_to_human(
+        handoff_result = tools.escalate_to_human(
             merchant_id=merchant_id,
             action_id=action_id,
             target=target,
@@ -110,6 +127,16 @@ def execute(
             clock=clock,
             decision=decision,
         )
+        if not handoff_result.ok:
+            logger.error("Failed to create handoff: %s", handoff_result.error)
+            store.update_action_status(action_id, ActionStatus.FAILED)
+            store.write_audit(
+                actor="agent",
+                event_type="action_failed",
+                merchant_id=merchant_id,
+                payload={"action": action.value, "error": handoff_result.error},
+            )
+            return False, merchant.state, ActionStatus.FAILED
         store.update_action_status(action_id, ActionStatus.EXECUTED, executed_at=now)
 
         # Send holding reply
@@ -118,7 +145,7 @@ def execute(
             owner_name=merchant.owner_name,
             fse_name="our executive",
         )
-        tools.send_whatsapp(
+        send_result = tools.send_whatsapp(
             merchant_id=merchant_id,
             channel=channel,
             store=store,
@@ -127,20 +154,23 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
+        reply_sent = _message_sent(send_result)
 
         # If escalation happened due to idle device, move to AT_RISK
         if "activation" in str(reason).lower() or context.counters.nudges_sent >= settings.MAX_ACTIVATION_NUDGES:
             if merchant.state in (LifecycleState.ACTIVATING, LifecycleState.INSTALLED):
                 store.update_state(merchant_id, LifecycleState.AT_RISK, reason="Activation nudges failed")
-                return True, LifecycleState.AT_RISK
+                return reply_sent, LifecycleState.AT_RISK, ActionStatus.EXECUTED
 
-        return True, merchant.state
+        return reply_sent, merchant.state, ActionStatus.EXECUTED
 
     # 4. Run (L3 Autonomous Execution)
     reply_sent = False
     new_state = merchant.state
+    message_required = False
 
     if action == ActionType.SEND_INTRO:
+        message_required = True
         t_id = templates.intro_template_id(lang.value)
         text, t_name, t_params = templates.render(t_id, owner_name=merchant.owner_name)
         res = tools.send_whatsapp(
@@ -152,17 +182,19 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
-        if merchant.state == LifecycleState.NEW:
+        reply_sent = _message_sent(res)
+        if reply_sent and merchant.state == LifecycleState.NEW:
             store.update_state(merchant_id, LifecycleState.CONTACTED, reason="Intro message sent")
             new_state = LifecycleState.CONTACTED
 
     elif action == ActionType.ANSWER_QUERY:
+        message_required = True
         query = decision.params.get("query", "")
         passages = search_policy(query, language=lang.value)
-        
-        # Grounded text formation
-        if passages:
+        text = decision.params.get("reply_text")
+        if text:
+            audit_source = passages[0].source if passages else "general_policy"
+        elif passages:
             best = passages[0]
             text = f"Regarding {merchant.shop_name}: {best.text}"
             audit_source = best.source
@@ -177,18 +209,19 @@ def execute(
             text=text,
             language=lang,
         )
-        reply_sent = res.ok
+        reply_sent = _message_sent(res)
         store.write_audit(
             actor="agent",
             event_type="policy_referenced",
             merchant_id=merchant_id,
             payload={"source": audit_source, "query": query},
         )
-        if merchant.state in (LifecycleState.NEW, LifecycleState.CONTACTED):
+        if reply_sent and merchant.state in (LifecycleState.NEW, LifecycleState.CONTACTED):
             store.update_state(merchant_id, LifecycleState.ENGAGED, reason="Merchant engaged in query")
             new_state = LifecycleState.ENGAGED
 
     elif action == ActionType.REQUEST_DOCS:
+        message_required = True
         text, t_name, t_params = templates.render("saathi_doc_request", owner_name=merchant.owner_name)
         res = tools.send_whatsapp(
             merchant_id=merchant_id,
@@ -199,12 +232,13 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
-        if merchant.state == LifecycleState.ENGAGED:
+        reply_sent = _message_sent(res)
+        if reply_sent and merchant.state == LifecycleState.ENGAGED:
             store.update_state(merchant_id, LifecycleState.DOCS_PENDING, reason="Documents requested")
             new_state = LifecycleState.DOCS_PENDING
 
     elif action == ActionType.REREQUEST_DOC:
+        message_required = True
         doc_type = decision.params.get("doc_type", "pan")
         text, t_name, t_params = templates.render(
             "saathi_doc_rerequest", owner_name=merchant.owner_name, doc_type=doc_type
@@ -218,7 +252,7 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_sent(res)
 
     elif action == ActionType.SCHEDULE_VISIT:
         v_res = tools.schedule_visit(
@@ -227,6 +261,17 @@ def execute(
             clock=clock,
             preferred_slot=decision.params.get("preferred_slot"),
         )
+        if not v_res.ok:
+            logger.error("Visit scheduling failed: %s", v_res.error)
+            store.update_action_status(action_id, ActionStatus.FAILED)
+            store.write_audit(
+                actor="agent",
+                event_type="action_failed",
+                merchant_id=merchant_id,
+                payload={"action": action.value, "error": v_res.error},
+            )
+            return False, merchant.state, ActionStatus.FAILED
+        message_required = True
         v_data = v_res.data
         slot_time = v_data.get("slot_start", "tomorrow")
         text, t_name, t_params = templates.render(
@@ -245,10 +290,11 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_sent(res)
         new_state = LifecycleState.VISIT_SCHEDULED
 
     elif action == ActionType.SEND_ACTIVATION_NUDGE:
+        message_required = True
         nudge_num = decision.params.get("nudge_number", context.counters.nudges_sent + 1)
         text, t_name, t_params = templates.render(
             "saathi_activation_nudge", owner_name=merchant.owner_name, nudge_number=nudge_num
@@ -262,9 +308,10 @@ def execute(
             template_name=t_name,
             template_params=t_params,
         )
-        reply_sent = res.ok
+        reply_sent = _message_sent(res)
 
     elif action == ActionType.EXPLAIN_SETTLEMENT:
+        message_required = True
         settlement_res = tools.check_settlement(merchant_id=merchant_id, store=store)
         if settlement_res.ok and settlement_res.data.get("found"):
             st = settlement_res.data["settlement"]
@@ -297,10 +344,10 @@ def execute(
                 template_name=t_name,
                 template_params=t_params,
             )
-            reply_sent = res.ok
+            reply_sent = _message_sent(res)
         else:
             # Escalate if settlement not found
-            tools.escalate_to_human(
+            handoff_result = tools.escalate_to_human(
                 merchant_id=merchant_id,
                 action_id=action_id,
                 target=HandoffTarget.SUPPORT,
@@ -309,6 +356,16 @@ def execute(
                 clock=clock,
                 decision=decision,
             )
+            if not handoff_result.ok:
+                logger.error("Failed to create settlement handoff: %s", handoff_result.error)
+                store.update_action_status(action_id, ActionStatus.FAILED)
+                store.write_audit(
+                    actor="agent",
+                    event_type="action_failed",
+                    merchant_id=merchant_id,
+                    payload={"action": action.value, "error": handoff_result.error},
+                )
+                return False, merchant.state, ActionStatus.FAILED
             text, t_name, t_params = templates.render(
                 "saathi_holding_escalation",
                 owner_name=merchant.owner_name,
@@ -323,7 +380,7 @@ def execute(
                 template_name=t_name,
                 template_params=t_params,
             )
-            reply_sent = res.ok
+            reply_sent = _message_sent(res)
 
     elif action == ActionType.CLOSE_LEAD:
         if merchant.state in (LifecycleState.NEW, LifecycleState.ENGAGED, LifecycleState.CONTACTED):
@@ -335,13 +392,19 @@ def execute(
             store.update_state(merchant_id, LifecycleState.DORMANT, reason="Follow-ups exhausted")
             new_state = LifecycleState.DORMANT
 
-    store.update_action_status(action_id, ActionStatus.EXECUTED, executed_at=now)
+    execution_status = (
+        ActionStatus.FAILED if message_required and not reply_sent else ActionStatus.EXECUTED
+    )
+    store.update_action_status(
+        action_id,
+        execution_status,
+        executed_at=now if execution_status == ActionStatus.EXECUTED else None,
+    )
     store.write_audit(
         actor="agent",
-        event_type="action_executed",
+        event_type="action_executed" if execution_status == ActionStatus.EXECUTED else "action_failed",
         merchant_id=merchant_id,
         payload={"action": action.value, "reply_sent": reply_sent},
     )
 
-    return reply_sent, new_state
-
+    return reply_sent, new_state, execution_status

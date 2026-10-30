@@ -1,9 +1,19 @@
 import pytest
 import time
+from pathlib import Path
 from fastapi.testclient import TestClient
 from server.main import app
+from integrations.documents.make_samples import SAMPLES_DIR, generate_samples
 
-client = TestClient(app)
+client = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_application():
+    global client
+    with TestClient(app) as test_client:
+        client = test_client
+        yield
 
 @pytest.fixture(autouse=True)
 def reset_before_test():
@@ -31,7 +41,15 @@ def test_at2_meena_blurry_then_clear_pan():
     mid = "m_meena"
 
     # Step 1: Upload blurry photo
-    files = {"file": ("meena_pan_blurry.jpg", b"fake_blurry_image_data", "image/jpeg")}
+    if not Path(SAMPLES_DIR, "meena_pan_blurry.jpg").exists():
+        generate_samples()
+    files = {
+        "file": (
+            "meena_pan_blurry.jpg",
+            Path(SAMPLES_DIR, "meena_pan_blurry.jpg").read_bytes(),
+            "image/jpeg",
+        )
+    }
     r1 = client.post(f"/api/documents/{mid}", files=files)
     assert r1.status_code == 200
     d1 = r1.json()
@@ -44,7 +62,13 @@ def test_at2_meena_blurry_then_clear_pan():
     assert r_m1.json()["state"] == "DOCS_PENDING"
 
     # Step 2: Upload clear photo
-    files2 = {"file": ("meena_pan_clear.jpg", b"fake_clear_image_data", "image/jpeg")}
+    files2 = {
+        "file": (
+            "meena_pan_clear.jpg",
+            Path(SAMPLES_DIR, "meena_pan_clear.jpg").read_bytes(),
+            "image/jpeg",
+        )
+    }
     r2 = client.post(f"/api/documents/{mid}", files=files2)
     assert r2.status_code == 200
     d2 = r2.json()
@@ -143,4 +167,3 @@ def test_at9_failure_drills():
     r404 = client.get("/api/merchants/m_nonexistent_xyz")
     assert r404.status_code == 404
     assert r404.json()["error"]["code"] == "NOT_FOUND"
-

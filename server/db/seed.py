@@ -159,6 +159,28 @@ def seed_database(target_db_url: str = None) -> None:
                 )
                 db.add(job)
             elif h["id"] == "m_farida":
+                for doc_type in ("pan", "address_proof"):
+                    document = Document(
+                        id=f"doc_m_farida_{doc_type}",
+                        merchant_id="m_farida",
+                        doc_type=doc_type,
+                        file_path=f"synthetic://demo/m_farida/{doc_type}",
+                        quality="ok",
+                        precheck_passed=True,
+                        kyc_status="approved",
+                        kyc_reference=f"DEMO-KYC-FARIDA-{doc_type.upper()}",
+                        created_at=now - timedelta(days=16)
+                    )
+                    db.add(document)
+                visit = Visit(
+                    id="visit_m_farida_completed",
+                    merchant_id="m_farida",
+                    fse_id="fse_3",
+                    slot_start=now - timedelta(days=15),
+                    status="done",
+                    created_at=now - timedelta(days=16)
+                )
+                db.add(visit)
                 device = Device(
                     id="dev_m_farida",
                     merchant_id="m_farida",
@@ -383,4 +405,3 @@ def seed_database(target_db_url: str = None) -> None:
 
 if __name__ == "__main__":
     seed_database()
-

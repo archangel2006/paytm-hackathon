@@ -10,7 +10,10 @@ decides between free-text and template, handles retries, and always returns a
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
+from typing import Iterator
 
 from agent.domain.enums import Channel
 from agent.ports import OutgoingMessage, SendResult
@@ -23,6 +26,19 @@ logger = logging.getLogger(__name__)
 # Module-level dependencies – set by configure()
 _store: Store | None = None
 _clock = None  # agent.ports.Clock
+_outbound_channel: ContextVar[Channel | None] = ContextVar(
+    "integrations_outbound_channel",
+    default=None,
+)
+
+
+@contextmanager
+def use_outbound_channel(channel: Channel) -> Iterator[None]:
+    token = _outbound_channel.set(channel)
+    try:
+        yield
+    finally:
+        _outbound_channel.reset(token)
 
 
 def configure(*, store: Store, clock) -> None:
@@ -47,6 +63,9 @@ def send_message(msg: OutgoingMessage) -> SendResult:
     Never raises – always returns a ``SendResult``.
     """
     try:
+        channel_override = _outbound_channel.get()
+        if channel_override is not None:
+            msg = msg.model_copy(update={"channel": channel_override})
         if msg.channel == Channel.SIMULATOR:
             return _send_simulator(msg)
         elif msg.channel == Channel.WHATSAPP:

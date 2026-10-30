@@ -521,7 +521,7 @@ class TestSimulator:
         assert on_incoming.calls[0].channel == Channel.SIMULATOR
 
         # Message saved
-        inbound_msgs = [m for m in store.messages if m["direction"] == "inbound"]
+        inbound_msgs = [m for m in store.messages if m["direction"] == "in"]
         assert len(inbound_msgs) == 1
 
     def test_receive_media(self):
@@ -602,9 +602,8 @@ class TestDocumentChecks:
 
     def _profile(self, name: str = "RAHUL SHARMA") -> ProfileForKyc:
         return ProfileForKyc(
-            merchant_id="test-merchant",
             owner_name=name,
-            phone_e164="+919876543210",
+            shop_name="Test Shop",
         )
 
     def test_clear_pan_passes(self):
@@ -617,6 +616,19 @@ class TestDocumentChecks:
             self._profile(),
         )
         assert result.quality == DocQuality.OK
+        assert result.precheck_passed is True
+        assert result.pan_format_valid is True
+
+    def test_meena_clear_sample_matches_merchant_name(self):
+        from integrations.documents.validate import validate_document
+        from integrations.documents.make_samples import SAMPLES_DIR
+
+        result = validate_document(
+            os.path.join(SAMPLES_DIR, "meena_pan_clear.jpg"),
+            DocType.PAN,
+            self._profile("MEENA DEVI"),
+        )
+
         assert result.precheck_passed is True
 
     def test_blurry_pan(self):
