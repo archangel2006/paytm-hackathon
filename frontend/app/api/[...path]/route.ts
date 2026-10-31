@@ -1,4 +1,16 @@
-const backendUrl = (process.env.SAATHI_BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+function getBackendUrl(): string {
+  let raw = (process.env.SAATHI_BACKEND_URL ?? "").trim();
+  if (!raw) {
+    raw = process.env.NODE_ENV === "production"
+      ? "https://paytm-saathi-backend-i661.onrender.com"
+      : "http://127.0.0.1:8000";
+  }
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw.replace(/\/+$/, "");
+  }
+  const protocol = raw.includes("localhost") || raw.includes("127.0.0.1") || !raw.includes(".") ? "http" : "https";
+  return `${protocol}://${raw}`.replace(/\/+$/, "");
+}
 
 async function proxy(request: Request, path: string[]) {
   const incomingUrl = new URL(request.url);
@@ -28,8 +40,11 @@ async function proxy(request: Request, path: string[]) {
     }
   }
 
+  const backendUrl = getBackendUrl();
+  const targetUrl = `${backendUrl}/api/${backendPath}${incomingUrl.search}`;
+
   try {
-    const response = await fetch(`${backendUrl}/api/${backendPath}${incomingUrl.search}`, {
+    const response = await fetch(targetUrl, {
       method: request.method,
       headers,
       body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
@@ -43,9 +58,15 @@ async function proxy(request: Request, path: string[]) {
       statusText: response.statusText,
       headers: responseHeaders,
     });
-  } catch {
+  } catch (err) {
     return Response.json(
-      { error: { code: "BACKEND_UNAVAILABLE", message: "Cannot reach the configured Saathi backend.", details: {} } },
+      {
+        error: {
+          code: "BACKEND_UNAVAILABLE",
+          message: `Cannot reach the configured Saathi backend at ${backendUrl}. Details: ${err instanceof Error ? err.message : String(err)}`,
+          details: {},
+        },
+      },
       { status: 502 },
     );
   }

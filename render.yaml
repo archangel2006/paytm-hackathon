@@ -24,12 +24,6 @@ services:
     startCommand: "npm start"
     envVars:
       - key: SAATHI_BACKEND_URL
-        fromService:
-          type: web
-          name: paytm-saathi-backend
-          property: host
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: paytm-saathi-backend
-          property: host
+        value: "https://paytm-saathi-backend-i661.onrender.com"
+      - key: NEXT_PUBLIC_SAATHI_API_URL
+        value: "/api"
