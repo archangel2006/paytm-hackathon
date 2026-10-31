@@ -542,7 +542,7 @@ One test per acceptance test AT-1 to AT-9, run against the real app with the rea
 | AT-6 | Manager sets SEND_ACTIVATION_NUDGE to L2 | The next nudge is `pending_approval` and nothing is sent until approved |
 | AT-7 | Live WhatsApp: a real phone sends the AT-1 message | Reply on the phone in under 10 seconds. Duplicate webhook deliveries create no duplicate replies |
 | AT-8 | Reset and replay | `/api/demo/reset` in under 3 seconds. All six heroes replay without manual database edits. Scoreboard and simulation load with assumptions visible |
-| AT-9 | Failure drills | LLM timeout: fallback used, no crash. WhatsApp unreachable: simulator works. Quiet hours block outbound sending. Unknown number creates a lead. Opt-out stops all outbound messages |
+| AT-9 | Failure drills | LLM timeout: fallback used, no crash. WhatsApp unreachable: simulator works. Unknown number creates a lead. Opt-out stops all outbound messages |
 
 ### 14.4 Success criteria for your area
 

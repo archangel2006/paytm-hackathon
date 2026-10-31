@@ -16,6 +16,7 @@ from agent import settings
 from agent.core import templates
 from agent.core.context_builder import Context
 from agent.core.guardrails import GuardrailResult
+from agent.core.llm_client import LLMUnavailable, generate_text
 from agent.core.planner import PlannerDecision
 from agent.domain.enums import (
     ActionStatus,
@@ -35,6 +36,63 @@ from agent.ports import (
 from agent.tools import impl as tools
 
 logger = logging.getLogger(__name__)
+
+
+def _plain_policy_text(text: str) -> str:
+    lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.replace("**", "")
+        if line.startswith("- "):
+            line = line[2:]
+        lines.append(line)
+    return " ".join(lines)
+
+
+def _fallback_query_reply(language: Language, passages: list[Any]) -> str:
+    if passages:
+        policy_text = _plain_policy_text(passages[0].text)
+        if language == Language.HINDI:
+            return f"Yeh jankari policy ke anusaar hai: {policy_text}"
+        if language == Language.HINGLISH:
+            return f"Policy ke hisaab se: {policy_text}"
+        return f"According to our policy: {policy_text}"
+    if language == Language.HINDI:
+        return "Is sawal ke liye mujhe abhi policy mein sahi jankari nahi mili. Kripya Paytm merchant support se sampark karein."
+    if language == Language.HINGLISH:
+        return "Mujhe is sawal ke liye abhi policy mein sahi jankari nahi mili. Paytm merchant support se sampark karein."
+    return "I couldn't find the relevant policy information for this question. Please contact Paytm merchant support."
+
+
+def _generate_query_reply(
+    merchant_name: str,
+    language: Language,
+    question: str,
+    passages: list[Any],
+) -> str:
+    from agent.prompts import reply_prompt
+
+    if not passages:
+        return _fallback_query_reply(language, passages)
+
+    prompt = reply_prompt.build(
+        merchant_name=merchant_name,
+        language=language.value,
+        question=question,
+        passages=[{"source": passage.source, "text": passage.text} for passage in passages],
+    )
+    try:
+        reply = generate_text(prompt).strip()
+        if reply:
+            if reply.startswith("```") and reply.endswith("```"):
+                reply = reply[3:-3].strip()
+            return reply
+        logger.warning("Reply LLM returned an empty response")
+    except LLMUnavailable as exc:
+        logger.warning("Reply LLM unavailable; using grounded fallback: %s", exc)
+    return _fallback_query_reply(language, passages)
 
 
 def _message_was_sent(result: Any) -> bool:
@@ -178,17 +236,15 @@ def execute(
             new_state = LifecycleState.CONTACTED
 
     elif action == ActionType.ANSWER_QUERY:
-        query = decision.params.get("query", "")
+        query = str(decision.params.get("query", "")).strip()
         passages = search_policy(query, language=lang.value)
-        
-        # Grounded text formation
-        if passages:
-            best = passages[0]
-            text = f"Regarding {merchant.shop_name}: {best.text}"
-            audit_source = best.source
-        else:
-            text = f"Hello {merchant.owner_name}, thank you for reaching out regarding Paytm Soundbox."
-            audit_source = "general_policy"
+        text = _generate_query_reply(
+            merchant_name=merchant.owner_name,
+            language=lang,
+            question=query,
+            passages=passages,
+        )
+        audit_source = ", ".join(passage.source for passage in passages) or "no_policy_match"
 
         res = tools.send_whatsapp(
             merchant_id=merchant_id,

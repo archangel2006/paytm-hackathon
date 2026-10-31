@@ -52,6 +52,7 @@ def _rule_based(
     event_kind: str,
     event_media_path: str | None,
     allowed: frozenset | None = None,
+    event_text: str | None = None,
 ) -> PlannerDecision | None:
     """
     Short-circuit rules. The first matching rule wins with source="rule".
@@ -164,7 +165,7 @@ def _rule_based(
         if ActionType.ANSWER_QUERY in allowed:
             return PlannerDecision(
                 action=ActionType.ANSWER_QUERY,
-                params={"query": nlu.intent.value},
+                params={"query": (event_text or "").strip() or nlu.intent.value},
                 language=lang,
                 reasoning="Merchant asked about fees or product details. Providing grounded answer from policy.",
                 confidence=0.95,
@@ -297,6 +298,7 @@ def decide(
     event_kind: str = "text",
     event_media_path: str | None = None,
     timer_reason: str | None = None,
+    event_text: str | None = None,
 ) -> PlannerDecision:
     """
     Decide the next best action for a merchant.
@@ -321,7 +323,14 @@ def decide(
             return timer_decision
 
     # Short-circuit rules
-    rule_decision = _rule_based(context, nlu, event_kind, event_media_path, allowed=allowed)
+    rule_decision = _rule_based(
+        context,
+        nlu,
+        event_kind,
+        event_media_path,
+        event_text=event_text,
+        allowed=allowed,
+    )
     if rule_decision is not None:
         # Ensure the rule's action is allowed in the current state
         if rule_decision.action in allowed:
@@ -335,4 +344,3 @@ def decide(
 
     # LLM planner
     return _llm_decide(context, nlu, allowed)
-

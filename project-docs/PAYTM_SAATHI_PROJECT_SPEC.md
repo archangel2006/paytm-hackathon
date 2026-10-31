@@ -440,7 +440,6 @@ Hard blocks:
 | Rule | Detail |
 |---|---|
 | Consent | No outbound message to a merchant who opted out or has no consent flag |
-| Quiet hours | No outbound messages between 21:00 and 08:00 local time |
 | Rate limit | Max 3 outbound messages per merchant per day |
 | Unverifiable claims | Any fee, timeline, or status in a message must come from a tool or policy passage in this step. Otherwise block |
 | Forbidden actions | Loan or credit offers, refunds, and discounts are never executed autonomously in MVP |
@@ -762,8 +761,6 @@ LLM_PROVIDER=
 LLM_API_KEY=
 LLM_MODEL=
 DATABASE_URL=sqlite:///./saathi.db
-QUIET_HOURS_START=21:00
-QUIET_HOURS_END=08:00
 MAX_MESSAGES_PER_DAY=3
 CONFIDENCE_THRESHOLD=0.6
 CORS_ORIGINS=http://localhost:3000
@@ -870,7 +867,7 @@ interface SimulationResult {
 ### 12.3 Error format
 
 ```json
-{ "error": { "code": "GUARDRAIL_BLOCKED", "message": "Quiet hours in effect", "details": {} } }
+{ "error": { "code": "GUARDRAIL_BLOCKED", "message": "Outbound action blocked by policy", "details": {} } }
 ```
 
 Codes: `NOT_FOUND`, `VALIDATION_ERROR`, `GUARDRAIL_BLOCKED`, `LLM_UNAVAILABLE`, `TOOL_FAILED`.

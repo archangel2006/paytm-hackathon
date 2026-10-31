@@ -419,7 +419,6 @@ sequenceDiagram
 | Rule | Detail |
 |---|---|
 | Consent | No outbound message to a merchant who opted out or has not given consent |
-| Quiet hours | No outbound messages between 21:00 and 08:00 |
 | Rate limit | At most 3 outbound messages per merchant per day |
 | Unverifiable claims | Any fee, timeline, or status must come from a tool or a policy passage in the same step |
 | Forbidden actions | Loan offers, refunds, and discounts never run autonomously in the prototype |

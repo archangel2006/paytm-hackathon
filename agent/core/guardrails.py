@@ -44,17 +44,6 @@ _SENSITIVE_KEYWORDS = [
 ]
 
 
-def _is_quiet_hours(now: datetime) -> bool:
-    """Return True if now is between QUIET_HOUR_START and QUIET_HOUR_END."""
-    hour = now.hour
-    start = settings.QUIET_HOUR_START   # e.g. 21
-    end = settings.QUIET_HOUR_END       # e.g. 8
-    if start > end:
-        # Wraps midnight: quiet from 21:00 to 08:00
-        return hour >= start or hour < end
-    return start <= hour < end
-
-
 def _has_unverifiable_claim(text: str, tool_outputs: dict[str, Any]) -> bool:
     """
     Check if the proposed reply text contains a specific number, currency, or date
@@ -120,22 +109,13 @@ def evaluate(
             status=ActionStatus.BLOCKED,
         )
 
-    # 1b. Quiet hours (only for outbound actions)
+    # 1b. Daily message rate limit (outbound only)
     _outbound_actions = {
         ActionType.SEND_INTRO, ActionType.ANSWER_QUERY, ActionType.REQUEST_DOCS,
         ActionType.REREQUEST_DOC, ActionType.SCHEDULE_VISIT,
         ActionType.SEND_ACTIVATION_NUDGE, ActionType.EXPLAIN_SETTLEMENT,
         ActionType.ESCALATE,
     }
-    if action in _outbound_actions and _is_quiet_hours(now):
-        notes.append(f"Quiet hours ({now.hour}:00) — message scheduled for 08:00.")
-        # We block execution now; executor will schedule for 08:00
-        return GuardrailResult(
-            verdict="block",
-            autonomy_level=AutonomyLevel.L3,
-            notes=notes,
-            status=ActionStatus.BLOCKED,
-        )
 
     # 1c. Daily message rate limit (outbound only)
     if (

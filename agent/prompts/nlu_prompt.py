@@ -40,7 +40,8 @@ Rules:
 - sentiment: -1.0 is very angry/abusive, 0.0 is neutral, 1.0 is very happy
 - wants_human: true if merchant uses words like "manager", "human", "baat karao"
 - mentions_money: true if merchant mentions fees, charges, payments, or amounts
+- Consider every clause in compound or conversational messages. If any clause asks about
+  fees, rentals, or charges, use ask_fees rather than classifying only the first clause.
 - confidence: how confident you are in the intent (0.0–1.0)
 
 Respond with ONLY the JSON object, no other text."""
-

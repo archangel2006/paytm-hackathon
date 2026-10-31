@@ -30,11 +30,23 @@ class PolicyPassage:
 
 # ── Hindi / Hinglish synonym map ──────────────────────────────
 _SYNONYMS: dict[str, list[str]] = {
+    "ask_fees": ["fee", "fees", "charge", "charges", "rental", "rent", "cost", "price"],
+    "ask_documents": ["document", "documents", "kyc", "pan", "aadhaar", "identity", "papers"],
+    "device_issue": ["device", "soundbox", "speaker", "machine", "broken", "repair", "charging"],
     "kitna": ["fee", "charge", "price", "cost", "amount", "rental"],
     "kitne": ["fee", "charge", "price", "cost"],
     "kitni": ["fee", "charge", "price"],
     "fees": ["fee", "charge", "rental"],
     "charge": ["fee", "charge", "rental"],
+    "charges": ["fee", "charge", "rental"],
+    "extra": ["additional", "charge", "charges", "fee"],
+    "monthly": ["month", "rental", "rent", "recurring"],
+    "kiraya": ["rental", "rent", "monthly", "fee"],
+    "cut": ["deducted", "deduction", "charge", "fee"],
+    "upi": ["upi", "payment", "transaction"],
+    "transaction": ["transaction", "payment", "upi", "charge"],
+    "transactions": ["transaction", "payment", "upi", "charge"],
+    "payment": ["payment", "transaction", "upi", "charge"],
     "rental": ["rental", "fee", "monthly", "rent"],
     "settlement": ["settlement", "payment", "paise", "credit", "account"],
     "paisa": ["payment", "amount", "settlement", "money"],
@@ -170,4 +182,3 @@ def get_retrieval(docs_dir: Path | None = None) -> PolicyRetrieval:
 def search_policy(query: str, language: str = "english") -> list[PolicyPassage]:
     """Convenience function using the module-level singleton."""
     return get_retrieval().search(query, language)
-

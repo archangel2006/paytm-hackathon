@@ -41,10 +41,6 @@ MAX_DOC_REREQUESTS: int = int(os.getenv("MAX_DOC_REREQUESTS", "2"))
 # Set to 0 (or a negative value) to disable the daily outbound limit.
 MAX_MESSAGES_PER_DAY: int = int(os.getenv("MAX_MESSAGES_PER_DAY", "3"))
 
-# ── Quiet hours (24-hour clock, local timezone) ───────────────
-QUIET_HOUR_START: int = int(os.getenv("QUIET_HOUR_START", "21"))   # 21:00
-QUIET_HOUR_END: int = int(os.getenv("QUIET_HOUR_END", "8"))         # 08:00
-
 # ── Planner / NLU ─────────────────────────────────────────────
 MIN_PLANNER_CONFIDENCE: float = float(os.getenv("MIN_PLANNER_CONFIDENCE", "0.6"))
 LLM_TIMEOUT_SECONDS: float = float(os.getenv("LLM_TIMEOUT_SECONDS", "8.0"))

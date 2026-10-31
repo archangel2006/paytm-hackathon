@@ -191,6 +191,19 @@ def _keyword_classify(text: str) -> tuple[Intent, float]:
     return top_intent, confidence
 
 
+def _needs_llm_review(text: str) -> bool:
+    """Detect compound questions that keyword priority cannot classify safely."""
+    lower = text.lower()
+    has_fee_topics = (
+        any(term in lower for term in ("monthly", "rental", "kiraya", "rent"))
+        and any(term in lower for term in ("upi", "transaction", "payment"))
+    )
+    has_multiple_clauses = any(
+        separator in lower for separator in (" aur ", " and ", " also ", "?")
+    )
+    return has_fee_topics and has_multiple_clauses
+
+
 class _LLMNluInput(BaseModel):
     intent: str
     language: str
@@ -253,8 +266,8 @@ def classify(
     wants_human = intent == Intent.ASK_HUMAN or "manager" in lower or "baat karao" in lower
     mentions_money = any(w in lower for w in _MONEY_WORDS)
 
-    # If keyword confidence is high enough, skip the LLM
-    if force_keywords or kw_confidence >= 0.8:
+    # Compound messages need semantic classification instead of keyword priority.
+    if force_keywords or (kw_confidence >= 0.8 and not _needs_llm_review(text)):
         return NluResult(
             intent=intent,
             language=lang,
@@ -278,4 +291,3 @@ def classify(
         mentions_money=mentions_money,
         confidence=max(kw_confidence, 0.4),
     )
-

@@ -300,12 +300,11 @@ sequenceDiagram
 flowchart TD
     A["send_message(msg)"] --> B{"msg.channel"}
     B -->|"simulator"| S["store.save_message outbound, store.publish_event message.new, return ok"]
-    B -->|"whatsapp"| C{"Quiet hours or opt-out? (the Agent already checked, just log)"}
-    C --> D{"Inbound message within last 24 hours?"}
-    D -->|"Yes"| E["Send free text"]
-    D -->|"No"| F{"template_name provided?"}
-    F -->|"Yes"| G["Send template with params"]
-    F -->|"No"| H["Return ok=false, used=none, error WINDOW_CLOSED"]
+    B -->|"whatsapp"| C{"Inbound message within last 24 hours?"}
+    C -->|"Yes"| D["Send free text"]
+    C -->|"No"| E{"template_name provided?"}
+    E -->|"Yes"| F["Send template with params"]
+    E -->|"No"| G["Return ok=false, used=none, error WINDOW_CLOSED"]
     E --> R["Result"]
     G --> R
     R --> K["On success: store.save_message outbound with provider_message_id"]

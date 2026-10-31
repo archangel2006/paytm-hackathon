@@ -127,6 +127,7 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
         nlu=nlu_res,
         event_kind=event.kind,
         event_media_path=event.media_path,
+        event_text=event.text,
     )
 
     # 8. Guardrails
@@ -173,7 +174,7 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
     summary = ActionSummary(
         id=action_id,
         action_type=decision.action,
-        status=guard_res.status if guard_res.verdict == "hold" else ActionStatus.EXECUTED,
+        status=guard_res.status if guard_res.verdict in ("hold", "block") else ActionStatus.EXECUTED,
         autonomy_level=guard_res.autonomy_level,
         reasoning=decision.reasoning,
     )
@@ -240,7 +241,7 @@ def handle_timer(merchant_id: str, reason: str) -> AgentResult:
             ActionSummary(
                 id=action_id,
                 action_type=decision.action,
-                status=guard_res.status if guard_res.verdict == "hold" else ActionStatus.EXECUTED,
+                status=guard_res.status if guard_res.verdict in ("hold", "block") else ActionStatus.EXECUTED,
                 autonomy_level=guard_res.autonomy_level,
                 reasoning=decision.reasoning,
             )

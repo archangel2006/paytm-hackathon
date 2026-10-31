@@ -612,7 +612,6 @@ Interface: `generate_json(prompt: str, schema: type[BaseModel], timeout_s: float
 | AG-11 | LLM timeout in NLU and planner | Keyword fallback and ESCALATE, no exception |
 | AG-12 | Opt-out message | Consent false, no outbound message afterwards |
 | AG-13 | Retry limits | Third document re-request becomes ESCALATE. Third nudge becomes ESCALATE |
-| AG-14 | Quiet hours at 22:00 | Outbound message blocked, send rescheduled for 08:00 |
 
 ### 14.3 Scenario tests (run through the simulator channel)
 
