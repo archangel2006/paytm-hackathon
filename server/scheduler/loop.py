@@ -1,12 +1,15 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 from sqlalchemy.orm import Session
-from server.db.session import SessionLocal
+from server.db.session import SessionLocal, bind_session
 from server.db.repo import PlatformRepo
 from server.db.models import Transaction
 from server.adapters.clock import clock
 from server.settings import settings
+
+logger = logging.getLogger(__name__)
 
 class Scheduler:
     def __init__(self, timer_handler: Optional[Callable[[str, str], Any]] = None):
@@ -36,7 +39,8 @@ class Scheduler:
                 repo.update_job_status(job_id, "running")
                 try:
                     if self.timer_handler:
-                        self.timer_handler(merchant_id, reason)
+                        with bind_session(db):
+                            self.timer_handler(merchant_id, reason)
                     elif reason == "activation_check":
                         # Platform fallback logic for activation check if agent is not yet wired
                         # Checks if 0 transactions, nudges or escalates
@@ -69,8 +73,8 @@ class Scheduler:
         while self._running:
             try:
                 self.run_due_jobs_once()
-            except Exception as e:
-                pass
+            except Exception:
+                logger.exception("Scheduler iteration failed")
             await asyncio.sleep(settings.SCHEDULER_TICK_SECONDS)
 
     def stop(self) -> None:

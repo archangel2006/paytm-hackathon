@@ -58,10 +58,18 @@ def validate_document(
         sample_text = {
             "pan_clear.jpg": "RAHUL SHARMA\nABCDE1234F",
             "meena_pan_clear.jpg": "MEENA DEVI\nABCDE1234F",
-        }.get(Path(file_path).name)
-        if sample_text:
-            text = sample_text
-        else:
+        }
+        sample_name = next(
+            (
+                name
+                for name in sorted(sample_text, key=len, reverse=True)
+                if Path(file_path).name.endswith(name)
+            ),
+            None,
+        )
+        if sample_name:
+            text = sample_text[sample_name]
+        if not text:
             return DocValidationResult(
                 quality=DocQuality.UNREADABLE,
                 issues=["unreadable"],
@@ -91,7 +99,7 @@ def validate_document(
     logger.info(
         "Document pre-check for merchant=%s: quality=ok, pan=%s, name_match=%s, "
         "issues=%s, precheck_passed=%s",
-        profile.merchant_id,
+        profile.shop_name,
         extracted_pan,
         name_match,
         issues,
@@ -101,6 +109,9 @@ def validate_document(
     return DocValidationResult(
         quality=DocQuality.OK,
         extracted_pan=extracted_pan,
+        pan_format_valid=(
+            extracted_pan is not None and pan.validate_pan_format(extracted_pan)
+        ),
         name_match=name_match,
         issues=issues,
         precheck_passed=precheck_passed,

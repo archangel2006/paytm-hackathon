@@ -2,7 +2,7 @@ import os
 import shutil
 from typing import Optional
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from server.api.deps import get_repo, APIError
 from server.db.repo import PlatformRepo
 from server.adapters.clock import clock
@@ -20,8 +20,8 @@ class DemoStateRequest(BaseModel):
 class DeviceEventRequest(BaseModel):
     merchant_id: str
     event: str  # installed, transaction
-    count: Optional[int] = 1
-    amount: Optional[float] = 150.0
+    count: Optional[int] = Field(default=1, ge=1, le=10)
+    amount: Optional[float] = Field(default=150.0, gt=0)
 
 @router.get("/state")
 def get_demo_state(repo: PlatformRepo = Depends(get_repo)):
@@ -123,7 +123,10 @@ def handle_device_event(req: DeviceEventRequest, repo: PlatformRepo = Depends(ge
         raise APIError("NOT_FOUND", f"Merchant {req.merchant_id} not found", status_code=404)
 
     if req.event == "installed":
-        dev = repo.record_device_installed(req.merchant_id)
+        try:
+            dev = repo.record_device_installed(req.merchant_id)
+        except ValueError as exc:
+            raise APIError("PREREQUISITE_NOT_MET", str(exc), status_code=409) from exc
         return {
             "status": "device_installed",
             "merchant_id": req.merchant_id,
@@ -131,11 +134,14 @@ def handle_device_event(req: DeviceEventRequest, repo: PlatformRepo = Depends(ge
             "merchant_state": repo.get_merchant(req.merchant_id).state
         }
     elif req.event == "transaction":
-        total_txns = repo.record_transactions(
-            merchant_id=req.merchant_id,
-            count=req.count or 1,
-            amount_per_txn=req.amount or 150.0
-        )
+        try:
+            total_txns = repo.record_transactions(
+                merchant_id=req.merchant_id,
+                count=req.count or 1,
+                amount_per_txn=req.amount or 150.0
+            )
+        except ValueError as exc:
+            raise APIError("PREREQUISITE_NOT_MET", str(exc), status_code=409) from exc
         return {
             "status": "transaction_recorded",
             "merchant_id": req.merchant_id,
@@ -145,4 +151,3 @@ def handle_device_event(req: DeviceEventRequest, repo: PlatformRepo = Depends(ge
         }
     else:
         raise APIError("VALIDATION_ERROR", f"Unknown device event '{req.event}'. Must be 'installed' or 'transaction'.", status_code=400)
-

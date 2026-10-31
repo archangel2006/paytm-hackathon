@@ -1,7 +1,9 @@
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, Depends, Query, Body
 from pydantic import BaseModel
+import agent
 from server.api.deps import get_repo, APIError, require_staff_access
+from server.db.models import AgentAction
 from server.db.repo import PlatformRepo
 
 router = APIRouter(
@@ -21,6 +23,20 @@ class RejectRequest(BaseModel):
 class EditRequest(BaseModel):
     by: str = "manager"
     edits: Dict[str, Any]
+
+
+def _pending_action(repo: PlatformRepo, action_id: str) -> AgentAction:
+    action = repo.db.query(AgentAction).filter(AgentAction.id == action_id).first()
+    if not action:
+        raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
+    if action.status != "pending_approval":
+        raise APIError(
+            "INVALID_ACTION_STATUS",
+            f"Action {action_id} is not awaiting approval.",
+            status_code=409,
+        )
+    return action
+
 
 @router.get("")
 def list_actions(
@@ -57,18 +73,15 @@ def approve_action(
     repo: PlatformRepo = Depends(get_repo),
     actor: str = Depends(require_staff_access),
 ):
-    act = repo.db.query(repo.db.models.AgentAction if hasattr(repo.db, 'models') else None).filter_by(id=action_id).first() if False else None
-    action = repo.update_action_status(action_id=action_id, status="approved", approved_by=actor)
-    if not action:
-        raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
-
-    # If action was OFFER_DISCOUNT or similar, execute the side effect
-    m = repo.get_merchant(action.merchant_id)
+    action = _pending_action(repo, action_id)
+    result = agent.approve_action(action_id, by=actor, edits=req.edits)
+    updated = repo.db.query(AgentAction).filter(AgentAction.id == action_id).first()
     return {
         "status": "approved",
         "action_id": action.id,
-        "merchant_id": action.merchant_id,
-        "executed_at": action.executed_at.isoformat() if action.executed_at else None
+        "merchant_id": result.merchant_id,
+        "reply_sent": result.reply_sent,
+        "executed_at": updated.executed_at.isoformat() if updated and updated.executed_at else None,
     }
 
 @router.post("/{action_id}/reject")
@@ -78,17 +91,12 @@ def reject_action(
     repo: PlatformRepo = Depends(get_repo),
     actor: str = Depends(require_staff_access),
 ):
-    action = repo.update_action_status(
-        action_id=action_id,
-        status="rejected",
-        approved_by=actor,
-        rejection_reason=req.reason_code,
-    )
-    if not action:
-        raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
+    _pending_action(repo, action_id)
+    result = agent.reject_action(action_id, by=actor, reason_code=req.reason_code)
     return {
         "status": "rejected",
-        "action_id": action.id,
+        "action_id": action_id,
+        "merchant_id": result.merchant_id,
         "rejection_reason": req.reason_code
     }
 
@@ -99,11 +107,14 @@ def edit_action(
     repo: PlatformRepo = Depends(get_repo),
     actor: str = Depends(require_staff_access),
 ):
-    action = repo.update_action_status(action_id=action_id, status="approved", approved_by=actor)
-    if not action:
-        raise APIError("NOT_FOUND", f"Action {action_id} not found", status_code=404)
+    action = _pending_action(repo, action_id)
+    result = agent.approve_action(action_id, by=actor, edits=req.edits)
+    updated = repo.db.query(AgentAction).filter(AgentAction.id == action_id).first()
     return {
         "status": "approved_with_edits",
         "action_id": action.id,
-        "edits": req.edits
+        "merchant_id": result.merchant_id,
+        "reply_sent": result.reply_sent,
+        "edits": req.edits,
+        "executed_at": updated.executed_at.isoformat() if updated and updated.executed_at else None,
     }

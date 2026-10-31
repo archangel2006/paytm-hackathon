@@ -1,0 +1,121 @@
+{
+  "planHash": "46a5549d860ad6015319260d45bc3e290511df6dbcd3893584e90c5ebe49e3ba",
+  "phase": "standalone",
+  "recordedAtUtc": "2026-10-30T16:37:17.7231892Z",
+  "retryCount": 1,
+  "resetBaseline": false,
+  "complete": true,
+  "result": {
+    "setupSucceeded": true,
+    "setupDurationMs": 0,
+    "setupFailureOutput": null,
+    "assertions": [
+      {
+        "name": "typescript-no-emit",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "",
+        "durationMs": 11001
+      },
+      {
+        "name": "frontend-lint",
+        "kind": "process",
+        "verificationMethod": "exit-code",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E frontend@0.1.0 lint\r\n\u003E eslint\r\n\r\n",
+        "durationMs": 11636
+      },
+      {
+        "name": "tests-pass",
+        "kind": "process",
+        "verificationMethod": "test-results",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E frontend@0.1.0 test\r\n\u003E vitest run\r\n\r\n\r\n\u001B[1m\u001B[46m RUN \u001B[49m\u001B[22m \u001B[36mv3.2.4 \u001B[39m\u001B[90mC:/PaytmHacks/paytm-hackathon/frontend\u001B[39m\r\n\r\n \u001B[32m\u2713\u001B[39m components/saathi-progress.test.ts \u001B[2m(\u001B[22m\u001B[2m5 tests\u001B[22m\u001B[2m)\u001B[22m\u001B[32m 10\u001B[2mms\u001B[22m\u001B[39m\r\n \u001B[32m\u2713\u001B[39m components/saathi-api.test.ts \u001B[2m(\u001B[22m\u001B[2m5 tests\u001B[22m\u001B[2m)\u001B[22m\u001B[32m 32\u001B[2mms\u001B[22m\u001B[39m\r\n\r\n\u001B[2m Test Files \u001B[22m \u001B[1m\u001B[32m2 passed\u001B[39m\u001B[22m\u001B[90m (2)\u001B[39m\r\n\u001B[2m      Tests \u001B[22m \u001B[1m\u001B[32m10 passed\u001B[39m\u001B[22m\u001B[90m (10)\u001B[39m\r\n\u001B[2m   Start at \u001B[22m 22:07:15\r\n\u001B[2m   Duration \u001B[22m 961ms\u001B[2m (transform 219ms, setup 0ms, collect 255ms, tests 42ms, environment 1ms, prepare 523ms)\u001B[22m\r\n\r\n",
+        "durationMs": 2863,
+        "testResults": {
+          "testFramework": "vitest",
+          "runnerDetectedFrom": "package_json",
+          "testsTotal": 10,
+          "testsPassed": 10,
+          "testsFailed": 0,
+          "testsSkipped": 0,
+          "parseFailed": false
+        }
+      },
+      {
+        "name": "live-frontend-api-proxy",
+        "kind": "process",
+        "verificationMethod": "output-contains",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "frontend=200 api=200\r\n",
+        "durationMs": 591
+      }
+    ],
+    "executions": [
+      {
+        "source": "typescript-no-emit",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npx.CMD",
+        "args": [
+          "tsc",
+          "--noEmit"
+        ],
+        "cwd": "C:\\PaytmHacks\\paytm-hackathon\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "frontend-lint",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "run",
+          "lint"
+        ],
+        "cwd": "C:\\PaytmHacks\\paytm-hackathon\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "tests-pass",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "test"
+        ],
+        "cwd": "C:\\PaytmHacks\\paytm-hackathon\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "live-frontend-api-proxy",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\node.EXE",
+        "args": [
+          "-e",
+          "(async()=\u003E{const r=await Promise.all([fetch(\u0027http://127.0.0.1:3000/\u0027),fetch(\u0027http://127.0.0.1:3000/api/health\u0027)]);console.log(\u0027frontend=\u0027\u002Br[0].status\u002B\u0027 api=\u0027\u002Br[1].status);if(!r.every(x=\u003Ex.ok))process.exit(1);const h=await r[1].json();if(h.status!==\u0027ok\u0027)process.exit(1)})().catch(e=\u003E{console.error(e);process.exit(1)})"
+        ],
+        "cwd": "C:\\PaytmHacks\\paytm-hackathon\\frontend",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      }
+    ]
+  }
+}

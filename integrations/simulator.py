@@ -12,7 +12,7 @@ import os
 import uuid
 from typing import Callable
 
-from agent.domain.enums import Channel
+from agent.domain.enums import Channel, DocType
 from agent.ports import AgentResult, Clock, IncomingEvent
 
 from integrations import settings
@@ -55,15 +55,6 @@ def receive_text(merchant_id: str, text: str) -> AgentResult:
 
     event_id = f"sim-{uuid.uuid4().hex[:12]}"
 
-    # Save inbound message
-    store.save_message(
-        merchant_id=merchant_id,
-        direction="inbound",
-        channel="simulator",
-        kind="text",
-        text=text,
-    )
-
     event = IncomingEvent(
         event_id=event_id,
         merchant_id=merchant_id,
@@ -81,7 +72,18 @@ def receive_text(merchant_id: str, text: str) -> AgentResult:
         event_id,
     )
 
-    result = on_incoming(event)
+    from integrations.router import use_outbound_channel
+
+    with use_outbound_channel(Channel.SIMULATOR):
+        result = on_incoming(event)
+    if not store.already_processed(event_id):
+        store.save_message(
+            merchant_id=merchant_id,
+            direction="in",
+            channel="simulator",
+            kind="text",
+            text=text,
+        )
     return result
 
 
@@ -90,6 +92,7 @@ def receive_media(
     file_bytes: bytes,
     filename: str,
     mime: str,
+    document_type: DocType = DocType.PAN,
 ) -> AgentResult:
     """Simulate a merchant sending a media file (image or document)."""
     store, on_incoming, clock = _get_deps()
@@ -118,18 +121,12 @@ def receive_media(
     # Save the file
     upload_dir = os.path.join(settings.UPLOAD_DIR, merchant_id)
     os.makedirs(upload_dir, exist_ok=True)
-    ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
-    save_path = os.path.join(upload_dir, f"{event_id}.{ext}")
+    safe_filename = os.path.basename(filename.replace("\\", "/"))[:120]
+    ext = safe_filename.rsplit(".", 1)[-1] if "." in safe_filename else "bin"
+    save_name = safe_filename or f"upload.{ext}"
+    save_path = os.path.join(upload_dir, f"{event_id}_{save_name}")
     with open(save_path, "wb") as f:
         f.write(file_bytes)
-
-    store.save_message(
-        merchant_id=merchant_id,
-        direction="inbound",
-        channel="simulator",
-        kind="media",
-        text=filename,
-    )
 
     event = IncomingEvent(
         event_id=event_id,
@@ -140,6 +137,7 @@ def receive_media(
         text=filename,
         media_path=save_path,
         mime_type=mime,
+        document_type=document_type,
         received_at=clock.now(),
     )
 
@@ -150,5 +148,16 @@ def receive_media(
         event_id,
     )
 
-    result = on_incoming(event)
+    from integrations.router import use_outbound_channel
+
+    with use_outbound_channel(Channel.SIMULATOR):
+        result = on_incoming(event)
+    if not store.already_processed(event_id):
+        store.save_message(
+            merchant_id=merchant_id,
+            direction="in",
+            channel="simulator",
+            kind="media",
+            text=filename,
+        )
     return result

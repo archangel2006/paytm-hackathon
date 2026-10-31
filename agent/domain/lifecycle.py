@@ -39,6 +39,7 @@ _ALLOWED_ACTIONS: dict[LifecycleState, FrozenSet[ActionType]] = {
         ActionType.WAIT,
         ActionType.CLOSE_LEAD,
         ActionType.ANSWER_QUERY,   # when merchant messaged first
+        ActionType.ESCALATE,
     }),
     LifecycleState.CONTACTED: frozenset({
         ActionType.SEND_INTRO,     # retry
@@ -97,6 +98,7 @@ _ALLOWED_ACTIONS: dict[LifecycleState, FrozenSet[ActionType]] = {
     LifecycleState.DORMANT: frozenset({
         ActionType.WAIT,
         ActionType.SEND_INTRO,   # after cooldown
+        ActionType.ESCALATE,
     }),
     LifecycleState.LOST: frozenset({
         ActionType.WAIT,
@@ -112,4 +114,3 @@ def allowed_actions(state: LifecycleState) -> FrozenSet[ActionType]:
 def is_legal_transition(from_state: LifecycleState, to_state: LifecycleState) -> bool:
     """Return True if transitioning from_state → to_state is legal."""
     return (from_state, to_state) in _LEGAL_TRANSITIONS
-

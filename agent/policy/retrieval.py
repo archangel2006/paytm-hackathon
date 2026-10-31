@@ -132,15 +132,28 @@ class PolicyRetrieval:
         if self._bm25 is not None:
             scores: list[float] = list(self._bm25.get_scores(expanded))
         else:
-            # Fallback: simple overlap count
+            # Score distinct query-term coverage so repeated words in a long
+            # passage cannot outrank a short, more relevant policy section.
             query_tokens = set(expanded)
             scores = [
-                sum(1 for t in tokens if t in query_tokens) / max(len(tokens), 1)
+                len(query_tokens.intersection(tokens)) / max(len(query_tokens), 1)
                 for tokens in self._tokenized
             ]
 
-        # Rank and filter
-        indexed = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
+        # A fee question should prioritize the fee policy over generic device
+        # passages that happen to repeat "Soundbox" more often.
+        fee_query = bool(
+            {"fee", "fees", "rental", "price", "cost", "kiraya", "mdr"}
+            & set(_tokenize(query))
+        )
+        indexed = sorted(
+            enumerate(scores),
+            key=lambda item: (
+                fee_query and self._passages[item[0]][0].startswith("fees.md >"),
+                item[1],
+            ),
+            reverse=True,
+        )
         results: list[PolicyPassage] = []
         for idx, score in indexed[: settings.POLICY_TOP_K]:
             if score < settings.POLICY_BM25_THRESHOLD:
@@ -170,4 +183,3 @@ def get_retrieval(docs_dir: Path | None = None) -> PolicyRetrieval:
 def search_policy(query: str, language: str = "english") -> list[PolicyPassage]:
     """Convenience function using the module-level singleton."""
     return get_retrieval().search(query, language)
-

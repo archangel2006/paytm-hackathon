@@ -6,7 +6,7 @@ Interface:
   generate_text(prompt, timeout_s) -> str
 
 Features:
-  - Timeout (default 8 seconds)
+  - Timeout (default 15 seconds)
   - One automatic retry on transient failure
   - Schema validation via Pydantic
   - Response cache keyed by hash(prompt + model) — enable with LLM_CACHE=on
@@ -53,6 +53,13 @@ def _cache_get(key: str) -> str | None:
 def _cache_set(key: str, value: str) -> None:
     if settings.LLM_CACHE:
         _CACHE[key] = value
+
+
+def _safe_error_message(error: Exception) -> str:
+    message = str(error)
+    if settings.LLM_API_KEY:
+        message = message.replace(settings.LLM_API_KEY, "[REDACTED]")
+    return message
 
 
 # ── Provider dispatch ─────────────────────────────────────────
@@ -106,31 +113,34 @@ def _call_anthropic(prompt: str, timeout_s: float, json_mode: bool) -> tuple[str
 def _call_gemini(prompt: str, timeout_s: float, json_mode: bool) -> tuple[str, dict]:
     """Call Google Gemini API."""
     try:
-        from google import genai  # type: ignore
-        from google.genai import types  # type: ignore
+        from google import genai
+        from google.genai import types
     except ImportError:
-        raise LLMUnavailable("google-genai package not installed")
+        raise LLMUnavailable("google-genai package not installed. Run: pip install google-genai")
 
-    logger.info(
-        "Starting Gemini request model=%s timeout_seconds=%s json_mode=%s",
-        settings.LLM_MODEL,
-        timeout_s,
-        json_mode,
-    )
     client = genai.Client(
         api_key=settings.LLM_API_KEY,
-        http_options=types.HttpOptions(timeout=max(10_000, int(timeout_s * 1000))),
+        http_options=types.HttpOptions(timeout=int(timeout_s * 1000)),
     )
-    resp = client.models.generate_content(
-        model=settings.LLM_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
+    try:
+        config = types.GenerateContentConfig(
             temperature=settings.LLM_TEMPERATURE,
-            response_mime_type="application/json" if json_mode else None,
-        ),
-    )
-    content = resp.text or ""
-    return content, {}
+            response_mime_type="application/json" if json_mode else "text/plain",
+        )
+        response = client.models.generate_content(
+            model=settings.LLM_MODEL,
+            contents=prompt,
+            config=config,
+        )
+        content = response.text or ""
+        usage_metadata = response.usage_metadata
+        usage = {
+            "prompt_tokens": usage_metadata.prompt_token_count if usage_metadata else 0,
+            "completion_tokens": usage_metadata.candidates_token_count if usage_metadata else 0,
+        }
+        return content, usage
+    finally:
+        client.close()
 
 
 _PROVIDERS: dict[str, Any] = {
@@ -192,11 +202,12 @@ def generate_json(
             return result
         except (LLMUnavailable, ValidationError, ValueError, Exception) as exc:
             last_error = exc
-            logger.warning("LLM attempt %d failed: %s", attempt + 1, exc)
+            logger.warning("LLM attempt %d failed: %s", attempt + 1, _safe_error_message(exc))
             if attempt == 0:
                 time.sleep(0.5)
 
-    raise LLMUnavailable(f"LLM unavailable after 2 attempts: {last_error}")
+    error_message = _safe_error_message(last_error) if last_error else "Unknown failure"
+    raise LLMUnavailable(f"LLM unavailable after 2 attempts: {error_message}")
 
 
 def generate_text(prompt: str, timeout_s: float | None = None) -> str:
@@ -223,11 +234,12 @@ def generate_text(prompt: str, timeout_s: float | None = None) -> str:
             return content
         except Exception as exc:
             last_error = exc
-            logger.warning("LLM text attempt %d failed: %s", attempt + 1, exc)
+            logger.warning("LLM text attempt %d failed: %s", attempt + 1, _safe_error_message(exc))
             if attempt == 0:
                 time.sleep(0.5)
 
-    raise LLMUnavailable(f"LLM unavailable after 2 attempts: {last_error}")
+    error_message = _safe_error_message(last_error) if last_error else "Unknown failure"
+    raise LLMUnavailable(f"LLM unavailable after 2 attempts: {error_message}")
 
 
 def _extract_json(content: str) -> str:

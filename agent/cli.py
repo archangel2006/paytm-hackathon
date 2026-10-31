@@ -292,7 +292,7 @@ def run_scenario(name: str) -> bool:
             guardrail_notes=guard_res.notes,
             prompt_version="v1",
         )
-        reply_sent, st_after = executor.execute(
+        reply_sent, st_after, _execution_status = executor.execute(
             dec, guard_res, act_id, ctx, store, channel, docs, clock
         )
         assert st_after == LifecycleState.CONTACTED
@@ -323,4 +323,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

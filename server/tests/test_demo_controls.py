@@ -1,3 +1,4 @@
+from pathlib import Path
 import time
 import pytest
 from fastapi.testclient import TestClient
@@ -17,8 +18,22 @@ def test_pl11_demo_reset_speed():
 def test_pl12_device_events_lifecycle():
     client.post("/api/demo/reset")
 
-    # Pick a fresh merchant or hero
-    mid = "m_pooja"
+    # Complete the document and visit milestones before simulating installation.
+    mid = "m_meena"
+    samples = Path("integrations/documents/samples")
+    pan_bytes = (samples / "meena_pan_clear.jpg").read_bytes()
+
+    pan = client.post(
+        f"/api/documents/{mid}?doc_type=pan",
+        files={"file": ("meena_pan_clear.jpg", pan_bytes, "image/jpeg")},
+    )
+    address = client.post(
+        f"/api/documents/{mid}?doc_type=address_proof",
+        files={"file": ("meena_pan_clear.jpg", pan_bytes, "image/jpeg")},
+    )
+    assert pan.status_code == 200
+    assert address.status_code == 200
+    assert address.json()["merchant_state"] == "VISIT_SCHEDULED"
 
     # 1. Device installed event
     r_inst = client.post("/api/demo/device-event", json={"merchant_id": mid, "event": "installed"})
@@ -37,4 +52,3 @@ def test_pl12_device_events_lifecycle():
     assert r_tx2.status_code == 200
     assert r_tx2.json()["total_transactions"] == 10
     assert r_tx2.json()["merchant_state"] == "ACTIVATED"
-

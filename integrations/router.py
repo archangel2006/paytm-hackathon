@@ -10,7 +10,10 @@ decides between free-text and template, handles retries, and always returns a
 from __future__ import annotations
 
 import logging
-from datetime import timedelta, timezone
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import timedelta
+from typing import Iterator
 
 from agent.domain.enums import Channel
 from agent.ports import OutgoingMessage, SendResult
@@ -23,6 +26,19 @@ logger = logging.getLogger(__name__)
 # Module-level dependencies – set by configure()
 _store: Store | None = None
 _clock = None  # agent.ports.Clock
+_outbound_channel: ContextVar[Channel | None] = ContextVar(
+    "integrations_outbound_channel",
+    default=None,
+)
+
+
+@contextmanager
+def use_outbound_channel(channel: Channel) -> Iterator[None]:
+    token = _outbound_channel.set(channel)
+    try:
+        yield
+    finally:
+        _outbound_channel.reset(token)
 
 
 def configure(*, store: Store, clock) -> None:
@@ -47,6 +63,9 @@ def send_message(msg: OutgoingMessage) -> SendResult:
     Never raises – always returns a ``SendResult``.
     """
     try:
+        channel_override = _outbound_channel.get()
+        if channel_override is not None:
+            msg = msg.model_copy(update={"channel": channel_override})
         if msg.channel == Channel.SIMULATOR:
             return _send_simulator(msg)
         elif msg.channel == Channel.WHATSAPP:
@@ -88,8 +107,6 @@ def _send_whatsapp(msg: OutgoingMessage) -> SendResult:
     # Check 24-hour window
     last_inbound = store.last_inbound_at(msg.merchant_id)
     now = clock.now()
-    if last_inbound is not None and last_inbound.tzinfo is None:
-        last_inbound = last_inbound.replace(tzinfo=timezone.utc)
     window_open = (
         last_inbound is not None
         and (now - last_inbound) < timedelta(seconds=settings.WINDOW_SECONDS)
@@ -110,13 +127,6 @@ def _send_whatsapp(msg: OutgoingMessage) -> SendResult:
     else:
         result = _wa_send_text(msg)
 
-    if not result.ok:
-        logger.warning(
-            "WhatsApp reply not sent merchant_id=%s code=%s detail=%s",
-            msg.merchant_id,
-            result.error_code,
-            result.error_detail,
-        )
     if result.ok:
         store.save_message(
             merchant_id=msg.merchant_id,

@@ -72,15 +72,6 @@ def _send_whatsapp(
         language=language,
     )
     result: SendResult = channel.send_message(msg)
-    if result.ok:
-        store.save_message(
-            merchant_id=merchant_id,
-            direction="out",
-            channel=str(msg.channel),
-            kind="template" if result.used == "template" else "text",
-            text=text,
-            provider_message_id=result.provider_message_id,
-        )
     return result.model_dump()
 
 
@@ -102,11 +93,11 @@ def _validate_kyc_doc(
 
     profile = ProfileForKyc(owner_name=merchant.owner_name, shop_name=merchant.shop_name)
     val_result: DocValidationResult = doc_checker.validate_document(file_path, doc_type, profile)
-    store.update_document_validation(document_id, val_result)
 
     kyc_res: KycResult | None = None
     if val_result.precheck_passed:
         kyc_res = doc_checker.submit_to_mock_kyc(document_id)
+    store.update_document_validation(document_id, val_result, kyc_res)
 
     return {
         "validation": val_result.model_dump(),
@@ -219,4 +210,3 @@ def _escalate_to_human(
 
 
 escalate_to_human = wrap_tool(_escalate_to_human)
-

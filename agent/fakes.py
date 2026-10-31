@@ -211,6 +211,16 @@ class FakeStore:
     def get_merchant(self, merchant_id: str) -> MerchantView | None:
         return self._merchants.get(merchant_id)
 
+    def list_merchants(
+        self,
+        state: LifecycleState | None = None,
+        limit: int = 120,
+    ) -> list[MerchantView]:
+        merchants = list(self._merchants.values())
+        if state is not None:
+            merchants = [merchant for merchant in merchants if merchant.state == state]
+        return sorted(merchants, key=lambda merchant: merchant.lead_score, reverse=True)[:limit]
+
     def create_lead(
         self,
         phone_e164: str,
@@ -313,7 +323,12 @@ class FakeStore:
         self._merchant_docs[merchant_id].append(doc_id)
         return doc_id
 
-    def update_document_validation(self, document_id: str, result: DocValidationResult) -> None:
+    def update_document_validation(
+        self,
+        document_id: str,
+        result: DocValidationResult,
+        kyc_result=None,
+    ) -> None:
         if document_id in self._documents:
             rec = self._documents[document_id]
             rec["quality"] = result.quality
@@ -322,6 +337,8 @@ class FakeStore:
             rec["name_match"] = result.name_match
             rec["issues"] = result.issues
             rec["precheck_passed"] = result.precheck_passed
+            rec["kyc_status"] = kyc_result.status if kyc_result else "pending"
+            rec["kyc_reference"] = kyc_result.reference_id if kyc_result else None
             rec["attempts"] = rec.get("attempts", 0) + 1
 
     # ── Context ───────────────────────────────────────────────
@@ -629,4 +646,3 @@ class FakeStore:
     def get_scheduled_jobs(self) -> list[dict]:
         """Test helper."""
         return list(self._scheduled_jobs)
-

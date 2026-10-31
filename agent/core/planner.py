@@ -51,6 +51,7 @@ def _rule_based(
     nlu: NluResult,
     event_kind: str,
     event_media_path: str | None,
+    event_document_type: str = "pan",
     allowed: frozenset | None = None,
 ) -> PlannerDecision | None:
     """
@@ -61,6 +62,94 @@ def _rule_based(
     allowed = allowed or allowed_actions(state)
     counters = context.counters
     lang = nlu.language or context.merchant.language
+
+    if event_kind == "preview":
+        recommendations = {
+            LifecycleState.NEW: (
+                ActionType.SEND_INTRO,
+                f"New lead. Initiate contact in {context.merchant.language.value}.",
+            ),
+            LifecycleState.CONTACTED: (
+                ActionType.ANSWER_QUERY,
+                "Lead reached out. Awaiting inquiry.",
+            ),
+            LifecycleState.ENGAGED: (
+                ActionType.REQUEST_DOCS,
+                "Merchant interested. Request PAN card and address proof.",
+            ),
+            LifecycleState.DOCS_PENDING: (
+                ActionType.REREQUEST_DOC,
+                "Documents pending verification or re-request.",
+            ),
+            LifecycleState.DOCS_VERIFIED: (
+                ActionType.SCHEDULE_VISIT,
+                "Documents passed pre-check. Cluster route with nearby merchants.",
+            ),
+            LifecycleState.VISIT_SCHEDULED: (
+                ActionType.WAIT,
+                "Visit scheduled. Waiting for FSE to install Soundbox.",
+            ),
+            LifecycleState.INSTALLED: (
+                ActionType.SEND_ACTIVATION_NUDGE,
+                "Device installed. Nudge merchant to complete first 10 transactions.",
+            ),
+            LifecycleState.ACTIVATING: (
+                ActionType.SEND_ACTIVATION_NUDGE,
+                "Device installed. Nudge merchant to complete first 10 transactions.",
+            ),
+            LifecycleState.ACTIVATED: (
+                ActionType.EXPLAIN_SETTLEMENT,
+                "Activated merchant. Ready for daily settlement assistance.",
+            ),
+            LifecycleState.AT_RISK: (
+                ActionType.ESCALATE,
+                "Device idle after 2 nudges. Warm handoff to FSE.",
+            ),
+        }
+        action, reasoning = recommendations.get(
+            state,
+            (ActionType.WAIT, "Lead dormant or closed."),
+        )
+        if action not in allowed:
+            action = ActionType.WAIT
+        return PlannerDecision(
+            action=action,
+            params={},
+            language=lang,
+            reasoning=reasoning,
+            confidence=0.90,
+            source="rule",
+        )
+        if ActionType.REQUEST_DOCS in allowed:
+            return PlannerDecision(
+        action=ActionType.REQUEST_DOCS,
+        params={},
+        language=lang,
+        reasoning="Document received. Requesting any remaining required documents before scheduling a visit.",
+        confidence=1.0,
+        source="rule",
+            )
+
+    if event_kind == "batch" and state == LifecycleState.NEW:
+        if ActionType.SEND_INTRO in allowed:
+            return PlannerDecision(
+                action=ActionType.SEND_INTRO,
+                params={},
+                language=lang,
+                reasoning="Ranked new lead selected for overnight outreach.",
+                confidence=0.92,
+                source="rule",
+            )
+
+    if event_kind != "media" and nlu.intent == Intent.OTHER and ActionType.ESCALATE in allowed:
+            return PlannerDecision(
+                action=ActionType.ESCALATE,
+                params={"target": HandoffTarget.SUPPORT, "reason": "unsupported_question"},
+                language=lang,
+                reasoning="The question is outside the verified agent knowledge. Routing it to a human advisor.",
+                confidence=1.0,
+                source="rule",
+            )
 
     # Rule 1: Opt-out
     if nlu.intent == Intent.OPT_OUT:
@@ -84,30 +173,32 @@ def _rule_based(
             source="rule",
         )
 
-    # Rule 3: Document upload + validation result
+    # Rule 3: Document uploads only progress after both required documents pass.
     if event_kind == "media" and event_media_path:
-        # Validation result is in the context docs
-        from agent.domain.enums import DocType
-        pan_doc = next(
-            (d for d in context.docs.__class__.__mro__ if False),  # just for typing
-            None,
+        uploaded_status = (
+            context.docs.pan_status
+            if event_document_type == "pan"
+            else context.docs.address_status
         )
-        # We check the raw docs from the bundle indirectly via context.docs
-        if context.docs.pan_status in ("precheck_passed",):
+        if context.docs.all_verified and ActionType.SCHEDULE_VISIT in allowed:
             return PlannerDecision(
                 action=ActionType.SCHEDULE_VISIT,
                 params={},
                 language=lang,
-                reasoning="Document pre-check passed. Scheduling FSE visit.",
+                reasoning="Both required documents passed their pre-checks and mock KYC. Scheduling the field visit.",
                 confidence=1.0,
                 source="rule",
             )
-        if context.docs.pan_status == "failed":
+        if uploaded_status == "failed":
             if counters.doc_rerequests < settings.MAX_DOC_REREQUESTS:
-                issues = context.docs.pan_issues
+                issues = (
+                    context.docs.pan_issues
+                    if event_document_type == "pan"
+                    else context.docs.address_issues
+                )
                 return PlannerDecision(
                     action=ActionType.REREQUEST_DOC,
-                    params={"doc_type": "pan", "issues": issues},
+                    params={"doc_type": event_document_type, "issues": issues},
                     language=lang,
                     reasoning=f"Document failed pre-check (issues: {issues}). Requesting resubmission.",
                     confidence=1.0,
@@ -296,6 +387,7 @@ def decide(
     nlu: NluResult,
     event_kind: str = "text",
     event_media_path: str | None = None,
+    event_document_type: str = "pan",
     timer_reason: str | None = None,
 ) -> PlannerDecision:
     """
@@ -321,7 +413,14 @@ def decide(
             return timer_decision
 
     # Short-circuit rules
-    rule_decision = _rule_based(context, nlu, event_kind, event_media_path, allowed=allowed)
+    rule_decision = _rule_based(
+        context,
+        nlu,
+        event_kind,
+        event_media_path,
+        event_document_type,
+        allowed=allowed,
+    )
     if rule_decision is not None:
         # Ensure the rule's action is allowed in the current state
         if rule_decision.action in allowed:
@@ -335,4 +434,3 @@ def decide(
 
     # LLM planner
     return _llm_decide(context, nlu, allowed)
-

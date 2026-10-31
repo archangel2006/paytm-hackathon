@@ -1,0 +1,47 @@
+{
+  "generatedAt": "2026-10-30T18:01:00+05:30",
+  "generatedOnPlatform": "win32",
+  "projectType": "webapp",
+  "setup": [],
+  "assertions": [
+    {
+      "name": "typescript-no-emit",
+      "kind": "process",
+      "command": "npx",
+      "args": ["tsc", "--noEmit"],
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "frontend-lint",
+      "kind": "process",
+      "command": "npm",
+      "args": ["run", "lint"],
+      "verificationMethod": "exit-code",
+      "expected": "0",
+      "timeoutSeconds": 180
+    },
+    {
+      "name": "tests-pass",
+      "kind": "process",
+      "command": "npm",
+      "args": ["test"],
+      "verificationMethod": "test-results",
+      "expected": "0",
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "live-frontend-api-proxy",
+      "kind": "process",
+      "command": "node",
+      "args": [
+        "-e",
+        "(async()=>{const r=await Promise.all([fetch('http://127.0.0.1:3000/'),fetch('http://127.0.0.1:3000/api/health')]);console.log('frontend='+r[0].status+' api='+r[1].status);if(!r.every(x=>x.ok))process.exit(1);const h=await r[1].json();if(h.status!=='ok')process.exit(1)})().catch(e=>{console.error(e);process.exit(1)})"
+      ],
+      "verificationMethod": "output-contains",
+      "expected": "frontend=200 api=200",
+      "timeoutSeconds": 30
+    }
+  ]
+}
