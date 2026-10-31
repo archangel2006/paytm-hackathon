@@ -332,11 +332,21 @@ class AgentStoreAdapter:
             for document in documents
         ]
 
+        direction_map = {
+            "in": "in",
+            "inbound": "in",
+            "out": "out",
+            "outbound": "out",
+        }
         recent_messages = [
             AgentMessageView(
                 id=message.id,
-                direction=message.direction,
-                channel=Channel(message.channel),
+                direction=direction_map[message.direction],
+                channel=Channel(
+                    message.channel.split(".", 1)[-1].lower()
+                    if isinstance(message.channel, str)
+                    else message.channel
+                ),
                 kind=message.kind,
                 text=message.text,
                 intent=message.intent,
