@@ -4,6 +4,9 @@ These diagrams describe the implemented platform and its agentic decision
 loop. They show the layers and responsibilities from an incoming event to a
 response, action, handoff, or persisted result.
 
+For the expanded single-page diagram with complete intent, action, tool, and
+RAG inventories, see [Agent architecture](AGENT-ARCHITECTURE.md).
+
 ## Full platform architecture
 
 <!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
