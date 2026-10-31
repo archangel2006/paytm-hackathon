@@ -142,6 +142,15 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Mount REST API
 app.include_router(api_router, prefix="/api")
 
+@app.get("/")
+def root():
+    return {
+        "service": "Paytm Saathi Backend API",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/api/health"
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server.main:app", host="0.0.0.0", port=8000, reload=True)
