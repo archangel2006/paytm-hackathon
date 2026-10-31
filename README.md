@@ -11,7 +11,8 @@ live operational dashboard.
 
 This root README is the central project guide. For every Mermaid diagram,
 see [Architecture diagrams](docs/ARCHITECTURE.md) and the
-[complete agent architecture](docs/AGENT-ARCHITECTURE.md). For installation,
+[complete agent architecture](docs/AGENT-ARCHITECTURE.md) and
+[platform users](docs/USER.md). For installation,
 environment setup, startup, demo controls, and troubleshooting, see
 [Setup and startup](docs/SETUP-AND-STARTUP.md).
 
