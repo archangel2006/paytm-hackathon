@@ -10,7 +10,7 @@ lifecycle rules, typed tools, human approval, escalation, audit logging, and a
 live operational dashboard.
 
 This root README is the central project guide. For every Mermaid diagram,
-see [Architecture diagrams](docs/ARCHITECTURE-DIAGRAMS.md). For installation,
+see [Architecture diagrams](docs/ARCHITECTURE.md). For installation,
 environment setup, startup, demo controls, and troubleshooting, see
 [Setup and startup](docs/SETUP-AND-STARTUP.md).
 
@@ -108,37 +108,36 @@ The composition root is `server/main.py`. The frontend calls FastAPI; the
 server wires the agent and integrations through ports; adapters connect those
 areas to SQLite; events flow back to the browser through SSE or polling.
 
+<!-- mermaid-checked: no \n, no em-dash/en-dash, no {} in labels, subgraphs are id["label"], arrows are -->|"label"|, all subgraphs closed by end, ids unique -->
 ```mermaid
-flowchart TB
-    FE["Experience layer<br/>Next.js dashboard, merchants, approvals, handoffs, scoreboard, phone simulator"]
-    API["API layer<br/>FastAPI routes, OpenAPI, CORS, validation"]
-    ORCH["Orchestration layer<br/>server/main.py, scheduler, simulated clock, demo controls"]
-    AG["Agent layer<br/>context, NLU, planner, lifecycle, scoring"]
-    SAFE["Safety layer<br/>guardrails, autonomy, escalation, audit decisions"]
-    TOOLS["Tool layer<br/>messages, KYC pre-check, visits, settlement, policies, handoffs"]
-    INT["Integration layer<br/>phone simulator, WhatsApp, uploads, OCR, mock KYC"]
-    ADAPTER["Adapter layer<br/>agent store, integrations store, repository"]
-    DATA[("SQLite<br/>merchants, messages, documents, visits, actions, handoffs, tickets, events")]
-    EVENTS["Event layer<br/>event bus, SSE stream, polling fallback"]
-    METRICS["Measurement layer<br/>scoreboard, audit queries, simulation engine"]
-    POLICY["Policy knowledge<br/>Markdown documents + BM25 retrieval"]
+flowchart TD
+    Experience["Experience layer: Next.js dashboard and simulator"]
+    Intake["Channel layer: FastAPI, WhatsApp, uploads, timers"]
+    Composition["Composition layer: handlers, ports, adapters, clock"]
+    Context["Context layer: merchant memory and lead scoring"]
+    Nlu["Understanding layer: intent, language, sentiment, human request"]
+    Plan["Decision layer: lifecycle rules and next best action planner"]
+    Rag["Grounding layer: policy query, BM25 retrieval, reply generation"]
+    Safety["Safety layer: consent, claims, confidence, autonomy"]
+    Tools["Tool layer: context, messages, documents, visits, settlement, policy, handoff"]
+    Integrations["Integration layer: simulator, WhatsApp, OCR, quality checks, mock KYC"]
+    Persistence[("Persistence layer: SQLite, actions, audit, events, metrics")]
 
-    FE --> API
-    API --> ORCH
-    ORCH --> AG
-    ORCH --> INT
-    AG --> SAFE --> TOOLS
-    TOOLS --> POLICY
-    TOOLS --> ADAPTER
-    INT --> ADAPTER
-    API --> ADAPTER
-    ADAPTER --> DATA
-    ADAPTER --> EVENTS --> FE
-    ADAPTER --> METRICS --> FE
+    Experience --> Intake
+    Intake --> Composition
+    Composition --> Context
+    Context --> Nlu
+    Nlu --> Plan
+    Plan --> Rag
+    Rag --> Safety
+    Safety --> Tools
+    Tools --> Integrations
+    Integrations --> Persistence
+    Persistence --> Experience
 ```
 
-More detailed diagrams are maintained in
-[docs/ARCHITECTURE-DIAGRAMS.md](docs/ARCHITECTURE-DIAGRAMS.md).
+The detailed agent loop, available tools, and RAG policy sources are shown in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Agentic architecture and impact
 

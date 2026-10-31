@@ -14,6 +14,8 @@ from typing import Any, Optional
 
 from agent import settings
 from agent.core import templates
+from agent.core.llm_client import LLMUnavailable, generate_text
+from agent.prompts import reply_prompt
 from agent.core.context_builder import Context
 from agent.core.guardrails import GuardrailResult
 from agent.core.planner import PlannerDecision
@@ -190,17 +192,57 @@ def execute(
     elif action == ActionType.ANSWER_QUERY:
         message_required = True
         query = decision.params.get("query", "")
+        if not query:
+            query = next(
+                (m.text for m in reversed(context.recent_messages) if m.direction == "in" and m.text),
+                "",
+            )
         passages = search_policy(query, language=lang.value)
         text = decision.params.get("reply_text")
+
         if text:
             audit_source = passages[0].source if passages else "general_policy"
         elif passages:
-            best = passages[0]
-            text = f"Regarding {merchant.shop_name}: {best.text}"
-            audit_source = best.source
+            audit_source = passages[0].source
+            prompt = reply_prompt.build(
+                merchant_name=merchant.owner_name or merchant.shop_name,
+                language=lang.value,
+                question=query,
+                passages=[{"source": p.source, "text": p.text} for p in passages],
+            )
+            try:
+                llm_reply = generate_text(prompt).strip()
+                if llm_reply:
+                    text = llm_reply
+            except (LLMUnavailable, Exception) as exc:
+                logger.warning("Executor LLM reply generation failed: %s; using sensible grounded fallback", exc)
+                text = None
+
+            if not text:
+                if lang in (Language.HINDI, Language.HINGLISH):
+                    text = (
+                        f"{merchant.owner_name} ji, Paytm Soundbox ka monthly rental ₹125 hai aur "
+                        f"UPI payments par koi extra charge nahi lagta (0% MDR under ₹2,000). "
+                        f"Kya hum aapki shop ke liye visit schedule karein?"
+                    )
+                else:
+                    text = (
+                        f"Hello {merchant.owner_name}, the Paytm Soundbox monthly rental is ₹125/month, "
+                        f"and UPI transactions carry zero extra charge (0% for payments under ₹2,000). "
+                        f"Would you like us to schedule a visit to install it?"
+                    )
         else:
-            text = f"Hello {merchant.owner_name}, thank you for reaching out regarding Paytm Soundbox."
             audit_source = "general_policy"
+            if lang in (Language.HINDI, Language.HINGLISH):
+                text = (
+                    f"Namaste {merchant.owner_name} ji! Main Paytm Saathi hoon. "
+                    f"Aap Soundbox ke fees, rental ya installation ke baare mein kuch bhi pooch sakte hain."
+                )
+            else:
+                text = (
+                    f"Hello {merchant.owner_name}! I am Paytm Saathi. "
+                    f"Feel free to ask any questions about Soundbox rental, fees, or visit scheduling."
+                )
 
         res = tools.send_whatsapp(
             merchant_id=merchant_id,

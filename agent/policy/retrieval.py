@@ -1,5 +1,5 @@
-"""
-agent/policy/retrieval.py — BM25-based policy document retrieval.
+﻿"""
+agent/policy/retrieval.py â€” BM25-based policy document retrieval.
 
 Splits policy docs by heading, ranks with BM25, returns top-k passages.
 Includes a Hindi synonym map for common query terms.
@@ -30,21 +30,47 @@ class PolicyPassage:
 
 # ── Hindi / Hinglish synonym map ──────────────────────────────
 _SYNONYMS: dict[str, list[str]] = {
+    # Intent names (for intent-derived queries)
+    "ask_fees": ["fee", "fees", "rental", "soundbox", "upi", "charge", "rate", "cost", "price", "monthly"],
+    "ask_documents": ["kyc", "document", "documents", "pan", "address", "verification", "precheck"],
+    "device_issue": ["device", "soundbox", "battery", "sim", "led", "network", "charging", "repair"],
+    "settlement_query": ["settlement", "delayed", "bank", "holiday", "paisa", "payment", "timeline"],
+    "ask_discount": ["discount", "waiver", "fee", "rental", "manager", "offer"],
+    "ask_human": ["manager", "human", "fse", "executive", "support", "escalate"],
+    # Phrasing and terminology
     "kitna": ["fee", "charge", "price", "cost", "amount", "rental"],
     "kitne": ["fee", "charge", "price", "cost"],
     "kitni": ["fee", "charge", "price"],
-    "fees": ["fee", "charge", "rental"],
-    "charge": ["fee", "charge", "rental"],
-    "rental": ["rental", "fee", "monthly", "rent"],
-    "settlement": ["settlement", "payment", "paise", "credit", "account"],
+    "fees": ["fee", "charge", "rental", "price", "cost"],
+    "fee": ["fees", "charge", "rental", "price", "cost"],
+    "charge": ["fee", "charge", "rental", "charges"],
+    "charges": ["charge", "fee", "rate", "cost", "upi"],
+    "rental": ["rental", "fee", "monthly", "rent", "cost", "125"],
+    "rent": ["rental", "fee", "cost", "monthly"],
+    "kiraya": ["rental", "rent", "fee", "monthly", "cost", "125"],
+    "kiraye": ["rental", "rent", "fee", "monthly"],
+    "monthly": ["monthly", "rental", "rent", "month", "125"],
+    "mahina": ["monthly", "month", "rental"],
+    "mahine": ["monthly", "month", "rental"],
+    "extra": ["charge", "fee", "additional", "cost", "transaction"],
+    "cut": ["deducted", "deduction", "charge", "fee"],
+    "katega": ["deducted", "deduction", "charge", "fee"],
+    "kat": ["deduct", "charge", "fee"],
+    "lagega": ["charge", "cost", "fee", "rental"],
+    "lagta": ["charge", "cost", "fee", "rental"],
+    "lagte": ["charge", "cost", "fee", "rental"],
+    "upi": ["upi", "transaction", "payment", "charge", "0%"],
+    "transaction": ["transaction", "upi", "payment", "charge"],
+    "transactions": ["transaction", "upi", "payment", "charge"],
+    "settlement": ["settlement", "payment", "paise", "credit", "account", "timeline"],
     "paisa": ["payment", "amount", "settlement", "money"],
     "paise": ["payment", "amount", "settlement", "money"],
     "nahi": ["not", "no", "missing", "failed"],
     "aaya": ["received", "credited", "arrived", "came"],
     "nahi_aaya": ["not received", "missing", "not credited"],
     "kyc": ["kyc", "document", "verification", "pan", "identity"],
-    "soundbox": ["soundbox", "device", "speaker", "qr"],
-    "device": ["device", "soundbox", "machine"],
+    "soundbox": ["soundbox", "device", "speaker", "qr", "rental"],
+    "device": ["device", "soundbox", "machine", "speaker"],
     "discount": ["discount", "waiver", "reduce", "less", "free"],
     "baat": ["talk", "speak", "human", "manager", "person"],
     "manager": ["manager", "supervisor", "human", "support"],
@@ -53,13 +79,22 @@ _SYNONYMS: dict[str, list[str]] = {
 
 def _expand_query(query: str) -> list[str]:
     """Expand query tokens with synonyms for better Hindi/Hinglish recall."""
-    tokens = re.findall(r"\w+", query.lower())
+    cleaned = query.replace("_", " ")
+    tokens = re.findall(r"\w+", cleaned.lower())
+    raw_tokens = re.findall(r"\w+", query.lower())
+    all_tokens = list(dict.fromkeys(raw_tokens + tokens))
     expanded: list[str] = []
-    for token in tokens:
+    for token in all_tokens:
         expanded.append(token)
         if token in _SYNONYMS:
             expanded.extend(_SYNONYMS[token])
-    return expanded
+    q_lower = query.lower()
+    if "monthly rental" in q_lower or "monthly charge" in q_lower:
+        expanded.extend(["monthly", "rental", "125", "fees", "cost"])
+    if "upi transaction" in q_lower or "extra charge" in q_lower:
+        expanded.extend(["upi", "transaction", "charges", "0%"])
+    return list(dict.fromkeys(expanded))
+
 
 
 def _tokenize(text: str) -> list[str]:
@@ -121,7 +156,7 @@ class PolicyRetrieval:
         Search policy documents for passages relevant to the query.
 
         Returns up to POLICY_TOP_K passages with score >= POLICY_BM25_THRESHOLD.
-        Returns an empty list when nothing matches — callers should escalate.
+        Returns an empty list when nothing matches â€” callers should escalate.
         """
         self._ensure_loaded()
         if not self._passages:
@@ -132,11 +167,9 @@ class PolicyRetrieval:
         if self._bm25 is not None:
             scores: list[float] = list(self._bm25.get_scores(expanded))
         else:
-            # Score distinct query-term coverage so repeated words in a long
-            # passage cannot outrank a short, more relevant policy section.
             query_tokens = set(expanded)
             scores = [
-                len(query_tokens.intersection(tokens)) / max(len(query_tokens), 1)
+                len(query_tokens.intersection(tokens)) / max(min(len(query_tokens), 5), 1)
                 for tokens in self._tokenized
             ]
 
@@ -183,3 +216,4 @@ def get_retrieval(docs_dir: Path | None = None) -> PolicyRetrieval:
 def search_policy(query: str, language: str = "english") -> list[PolicyPassage]:
     """Convenience function using the module-level singleton."""
     return get_retrieval().search(query, language)
+

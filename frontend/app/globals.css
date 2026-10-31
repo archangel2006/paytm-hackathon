@@ -44,3 +44,10 @@ table{width:100%;border-collapse:collapse}th{text-align:left;font-weight:500;col
 @media(max-width:600px){.dashboard-panels{grid-template-columns:1fr}.journey-step{column-gap:8px;padding-right:4px}.journey-step:not(:last-child)::after{left:38px;right:12px}.journey-copy{gap:5px}.journey-copy b{font-size:12px}.conversation-section .message-controls{gap:5px}.conversation-section .message-controls .btn{padding:8px 10px}.voice-button{width:38px;height:38px}.conversation-page .ph{height:calc(100dvh - 250px);min-height:480px}.detail-quick-stats>div:last-child{min-width:112px}}
 .journey-step{grid-template-columns:1fr;grid-template-rows:32px auto;row-gap:8px}.journey-step:not(:last-child)::after{left:32px;right:-12px;top:15px}.journey-copy{grid-column:1;grid-row:2;padding:0 4px 0 0}
 @media(max-width:600px){.journey-step{grid-template-rows:28px auto;row-gap:8px}.journey-step:not(:last-child)::after{left:28px;right:-10px;top:13px}}
+
+.ico{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#e6f2fb;color:#0f7fba;margin-bottom:14px}
+.stage-card h3{margin-top:0;margin-bottom:6px;font-size:16px}
+.stage-card p{margin:0;line-height:1.5}
+.stage-human{margin-top:10px;color:var(--mut);font-size:13px}
+.trust-card h3{margin-top:0;margin-bottom:6px;font-size:16px}
+.trust-card p{margin:0;line-height:1.5;color:var(--mut)}

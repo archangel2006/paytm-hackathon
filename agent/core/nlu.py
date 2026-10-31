@@ -151,23 +151,33 @@ def _sentiment(text: str) -> float:
 def _keyword_classify(text: str) -> tuple[Intent, float]:
     """
     Return (intent, confidence) from keyword matching.
-    confidence=1.0 for unambiguous match, 0.7 for single match, 0.0 if no match.
+    Nuanced, compound, or conversational questions receive moderate confidence (0.65)
+    so that LLM classification evaluates the multi-clause context unless force_keywords is True.
     """
     lower = text.lower()
+    words = text.strip().split()
+
+    is_compound_or_conversational = (
+        len(words) >= 6
+        or any(conn in lower for conn in [" aur ", " and ", " lekin ", " but ", " ya ", " also ", " tatha ", " sath ", " saath "])
+        or (lower.count("?") > 1)
+    )
 
     # Priority check for explicit intents
-    if "discount" in lower or "kam karo" in lower:
-        return Intent.ASK_DISCOUNT, 0.95
-    if "fees" in lower or "charge" in lower or "kitna" in lower:
-        return Intent.ASK_FEES, 0.95
-    if "settlement" in lower or "paisa nahi" in lower or "payment nahi" in lower:
-        return Intent.SETTLEMENT_QUERY, 0.95
-    if "manager" in lower or "baat karao" in lower or "insaan" in lower:
-        return Intent.ASK_HUMAN, 0.95
-    if "theek hai" in lower or "aa jao" in lower or "visit" in lower:
-        return Intent.AGREE_VISIT, 0.95
-    if "stop" in lower or "mat bhejo" in lower or "unsubscribe" in lower:
-        return Intent.OPT_OUT, 0.95
+    fast_intents: list[tuple[bool, Intent]] = [
+        ("discount" in lower or "kam karo" in lower, Intent.ASK_DISCOUNT),
+        ("fees" in lower or "fee" in lower or "charge" in lower or "kitna" in lower or "rental" in lower, Intent.ASK_FEES),
+        ("settlement" in lower or "paisa nahi" in lower or "payment nahi" in lower, Intent.SETTLEMENT_QUERY),
+        ("manager" in lower or "baat karao" in lower or "insaan" in lower, Intent.ASK_HUMAN),
+        ("theek hai" in lower or "aa jao" in lower or "visit" in lower, Intent.AGREE_VISIT),
+        ("stop" in lower or "mat bhejo" in lower or "unsubscribe" in lower, Intent.OPT_OUT),
+    ]
+
+    for condition, matched_intent in fast_intents:
+        if condition:
+            # If compound or conversational query, yield moderate confidence to let LLM evaluate nuance
+            conf = 0.65 if is_compound_or_conversational else 0.95
+            return matched_intent, conf
 
     matches: list[tuple[Intent, int]] = []
 
@@ -182,8 +192,9 @@ def _keyword_classify(text: str) -> tuple[Intent, float]:
     matches.sort(key=lambda x: x[1], reverse=True)
     top_intent, top_score = matches[0]
 
-    # High confidence if clear winner
-    if len(matches) == 1 or matches[0][1] > matches[1][1]:
+    if is_compound_or_conversational:
+        confidence = 0.65
+    elif len(matches) == 1 or matches[0][1] > matches[1][1]:
         confidence = min(0.95, 0.7 + top_score * 0.05)
     else:
         confidence = 0.6  # ambiguous — let LLM decide
@@ -207,13 +218,25 @@ def _llm_classify(text: str, context_summary: str) -> NluResult | None:
     prompt = nlu_prompt.build(text=text, context_summary=context_summary)
     try:
         raw = generate_json(prompt, _LLMNluInput)
+        intent_str = str(raw.intent).strip().lower()
+        try:
+            intent = Intent(intent_str)
+        except ValueError:
+            intent = Intent.OTHER
+
+        lang_str = str(raw.language).strip().lower()
+        try:
+            lang = Language(lang_str)
+        except ValueError:
+            lang = Language.ENGLISH
+
         return NluResult(
-            intent=Intent(raw.intent) if raw.intent in Intent.__members__.values() else Intent.OTHER,
-            language=Language(raw.language) if raw.language in Language.__members__.values() else Language.ENGLISH,
-            sentiment=max(-1.0, min(1.0, raw.sentiment)),
-            wants_human=raw.wants_human,
-            mentions_money=raw.mentions_money,
-            confidence=max(0.0, min(1.0, raw.confidence)),
+            intent=intent,
+            language=lang,
+            sentiment=max(-1.0, min(1.0, float(raw.sentiment))),
+            wants_human=bool(raw.wants_human),
+            mentions_money=bool(raw.mentions_money),
+            confidence=max(0.0, min(1.0, float(raw.confidence))),
         )
     except (LLMUnavailable, Exception) as exc:
         logger.warning("NLU LLM call failed, using keyword fallback: %s", exc)

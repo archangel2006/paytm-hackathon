@@ -28,6 +28,7 @@ agent/prompts/planner_prompt.py
 agent/prompts/reply_prompt.py
 agent/tests/__init__.py
 agent/tests/test_agent_units.py
+agent/tests/test_llm_client.py
 agent/tools/__init__.py
 agent/tools/base.py
 agent/tools/impl.py

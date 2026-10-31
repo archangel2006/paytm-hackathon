@@ -253,9 +253,14 @@ def _rule_based(
     # Rule 8: Fee questions / interest / general queries
     if nlu.intent in (Intent.ASK_FEES, Intent.INTEREST, Intent.GREETING, Intent.ASK_DOCUMENTS):
         if ActionType.ANSWER_QUERY in allowed:
+            inbound_query = next(
+                (m.text for m in reversed(context.recent_messages) if m.direction == "in" and m.text),
+                "",
+            )
+            query_text = inbound_query.strip() if inbound_query else nlu.intent.value
             return PlannerDecision(
                 action=ActionType.ANSWER_QUERY,
-                params={"query": nlu.intent.value},
+                params={"query": query_text},
                 language=lang,
                 reasoning="Merchant asked about fees or product details. Providing grounded answer from policy.",
                 confidence=0.95,
