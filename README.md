@@ -1,162 +1,282 @@
-# Paytm Saathi: Platform & Backend API
+# Paytm Saathi
 
-**Paytm Saathi** is an autonomous AI teammate designed for Paytm field sales executives (FSEs) and customer support teams. Saathi owns a single business outcome for every merchant: **take them from lead to their first 10 successful transactions.**
+> **The autonomous AI teammate for merchant onboarding, activation, and
+> support.**
 
-This repository contains the backend platform services, database layer, simulation engine, and integration wiring built for the Paytm Build for India AI Hackathon (Track 3: Autonomous AI Teammates).
+Paytm Saathi helps field sales executives and support teams move synthetic
+demo merchants through outreach, document collection, visit scheduling, device
+activation, and service. It combines an agent loop with deterministic
+lifecycle rules, typed tools, human approval, escalation, audit logging, and a
+live operational dashboard.
 
----
+This root README is the central project guide. For every Mermaid diagram,
+see [Architecture diagrams](docs/ARCHITECTURE-DIAGRAMS.md). For installation,
+environment setup, startup, demo controls, and troubleshooting, see
+[Setup and startup](docs/SETUP-AND-STARTUP.md).
 
-## 1. Architecture & Team Ownership
+> **Demo boundary:** this repository uses synthetic merchants, documents,
+> messages, payments, and mock integrations. It is not connected to real
+> Paytm systems.
 
-The project enforces strict folder ownership and interface separation:
+## Product solution
 
-| Area | Owner | Folder | Responsibility |
-|---|---|---|---|
-| **Platform** | Person 3 (This Build) | `server/`, `e2e/`, `scripts/`, `docs/`, root files | SQLite database, REST API, SSE stream, scheduler, seed data, simulation engine, adapters |
-| **Agent** | Person 2 | `agent/` | Context builder, NLU, planner, guardrails, autonomy ladder, tools, BM25 retrieval |
-| **Integrations** | Person 1 | `integrations/` | WhatsApp webhook, phone simulator channel, OCR & blur pre-check, mock KYC |
+Saathi is designed to own the operational journey from a lead to activation,
+without replacing the human roles that require trust or judgement:
 
-### Dependency & Wiring Contract
-- `server/main.py` is the composition root that wires `agent` and `integrations` through dependency injection:
-  ```python
-  agent.configure(store=agent_store, channel=integrations.router, documents=integrations.documents, clock=clock)
-  integrations.configure(store=integrations_store, on_incoming=agent.handle_incoming, clock=clock)
-  ```
-- Neither `agent/` nor `integrations/` imports `server/`. They communicate solely through the Protocols in `agent/ports.py` and `integrations/ports.py`.
+| Workflow stage | Saathi capability | Human control |
+|---|---|---|
+| Lead triage | Scores merchants and proposes the next action | FSE reviews priorities |
+| Outreach | Simulator/WhatsApp messaging, language-aware replies, follow-ups | Human can take over |
+| Documents | Upload checks, blur/readability/PAN/name pre-check, targeted re-request | Mock KYC remains separate from pre-check |
+| Visits | Finds nearby verified leads and schedules clustered visits | FSE performs the visit |
+| Activation | Sends nudges, tracks device events and transaction progress | Escalates idle or risky cases |
+| Service | Grounds fee, settlement, and device answers in policy documents | Support handles complex disputes |
 
----
+The agent never writes to SQLite directly. It proposes a structured action;
+guardrails decide whether it is blocked, escalated, queued for approval, or
+executed through a typed tool.
 
-## 2. Quick Start
+## Implemented features
 
-### 1. Setup Virtual Environment
-```bash
-# Windows
-py -3.13 -m venv .venv
-.venv\Scripts\activate
-pip install -e .
+### Agent and decisioning
+
+- Context builder for merchant memory, lifecycle, documents, visits,
+  transactions, tickets, messages, and previous actions.
+- NLU for intent, language, and sentiment with model and fallback paths.
+- Lifecycle-aware next-best-action planner.
+- Weighted lead scoring using footfall, category, engagement,
+  responsiveness, and proximity.
+- BM25 policy retrieval over fee, settlement, KYC, device, and escalation
+  documents.
+- Structured handoff summaries with reason, history, objection, and next step.
+- Timers for follow-up, document reminders, activation checks, and settlement
+  re-checks.
+
+### Safety and human-in-the-loop
+
+- L1: suggestion only; L2: human approval; L3: bounded autonomous execution.
+- Consent/opt-out, quiet-hour, rate-limit, retry, confidence, and
+  unsupported-claim checks.
+- Escalation for negative sentiment, human requests, sensitive topics, risky
+  commitments, low confidence, and retry exhaustion.
+- Approval queue supports approve, reject, and edit operations.
+- Append-only audit records and override tracking.
+
+### Channels and document processing
+
+- Phone simulator channel that runs through the same agent path as external
+  messages.
+- WhatsApp webhook verification, HMAC signature validation, payload parsing,
+  event deduplication, media handling, template/text routing, retries, and
+  status reporting.
+- Document upload MIME and size validation.
+- Synthetic document quality checks for blur, readability, OCR/PAN extraction,
+  and profile-name matching.
+- Mock KYC submission after a document pre-check passes. This is not official
+  KYC verification.
+
+### Platform and operations
+
+- FastAPI REST API with Swagger and generated OpenAPI.
+- SQLite persistence with SQLAlchemy and separate agent/integration adapters.
+- Async scheduler and controllable simulated clock.
+- Server-Sent Events with polling fallback.
+- Morning briefing, merchants, chat, documents, actions, handoffs, autonomy,
+  scoreboard, simulation, audit, policies, batch, and demo-control APIs.
+- Seed/reset controls, hero scenarios, device events, and deterministic
+  Monte Carlo simulation.
+
+## Frontend pages
+
+The current Next.js application provides these product surfaces:
+
+| Page/view | What it shows |
+|---|---|
+| Home | Product entry point and demo navigation |
+| Dashboard | Briefing, feed, counts, and daily operating view |
+| Merchants | Merchant/lead list with lifecycle and scoring |
+| Merchant detail | Merchant 360 context, messages, actions, and scenario controls |
+| Approvals | Pending actions and approve/reject/edit controls |
+| Handoffs | Escalation queue and resolution workflow |
+| Scoreboard | Funnel, outcome, and override metrics |
+| Phone simulator | Merchant message interaction and agent responses |
+| Demo controls | Reset, clock advancement, scenario and device simulation |
+
+## Current layered architecture
+
+The composition root is `server/main.py`. The frontend calls FastAPI; the
+server wires the agent and integrations through ports; adapters connect those
+areas to SQLite; events flow back to the browser through SSE or polling.
+
+```mermaid
+flowchart TB
+    FE["Experience layer<br/>Next.js dashboard, merchants, approvals, handoffs, scoreboard, phone simulator"]
+    API["API layer<br/>FastAPI routes, OpenAPI, CORS, validation"]
+    ORCH["Orchestration layer<br/>server/main.py, scheduler, simulated clock, demo controls"]
+    AG["Agent layer<br/>context, NLU, planner, lifecycle, scoring"]
+    SAFE["Safety layer<br/>guardrails, autonomy, escalation, audit decisions"]
+    TOOLS["Tool layer<br/>messages, KYC pre-check, visits, settlement, policies, handoffs"]
+    INT["Integration layer<br/>phone simulator, WhatsApp, uploads, OCR, mock KYC"]
+    ADAPTER["Adapter layer<br/>agent store, integrations store, repository"]
+    DATA[("SQLite<br/>merchants, messages, documents, visits, actions, handoffs, tickets, events")]
+    EVENTS["Event layer<br/>event bus, SSE stream, polling fallback"]
+    METRICS["Measurement layer<br/>scoreboard, audit queries, simulation engine"]
+    POLICY["Policy knowledge<br/>Markdown documents + BM25 retrieval"]
+
+    FE --> API
+    API --> ORCH
+    ORCH --> AG
+    ORCH --> INT
+    AG --> SAFE --> TOOLS
+    TOOLS --> POLICY
+    TOOLS --> ADAPTER
+    INT --> ADAPTER
+    API --> ADAPTER
+    ADAPTER --> DATA
+    ADAPTER --> EVENTS --> FE
+    ADAPTER --> METRICS --> FE
 ```
 
-For OCR on arbitrary uploaded documents, install the native Tesseract OCR
-executable and make sure `tesseract` is available on `PATH`. The Python
-`pytesseract` package is installed with the project, but it does not include
-the native executable. Synthetic demo documents have a deterministic fallback
-when Tesseract is unavailable; other images will be reported as unreadable.
+More detailed diagrams are maintained in
+[docs/ARCHITECTURE-DIAGRAMS.md](docs/ARCHITECTURE-DIAGRAMS.md).
 
-### 2. Seed Database
-Seeds 306 synthetic merchants (including the 6 demo heroes) and creates an instantaneous reset snapshot (`saathi.seed.db`):
-```bash
+## Agentic architecture and impact
+
+Saathi uses the model only where language or prioritization is ambiguous.
+Rules remain authoritative for lifecycle legality, score calculation,
+consent, rate limits, quiet hours, policy thresholds, document quality, and
+autonomy. This gives the application useful autonomy without making the model
+an unrestricted database actor.
+
+| Agentic capability | Measurable operational effect |
+|---|---|
+| Contextual next-best action | FSEs work from a ranked action queue rather than a raw lead list |
+| Persistent follow-up timers | Fewer leads and document requests stall due to missed reminders |
+| Grounded policy retrieval | Fewer unsupported fee, settlement, and device claims |
+| Targeted document re-request | Merchants correct the specific quality problem instead of resubmitting everything |
+| Activation monitoring | Idle installed devices are detected and nudged earlier |
+| Warm handoffs | Support starts with context and a recommended next step |
+| Autonomy ladder | Managers can increase automation gradually and safely |
+| Audit and override loop | Decisions are reviewable and autonomy can be tuned from evidence |
+
+## Success metrics
+
+The live/demo scoreboard and simulation expose the following definitions:
+
+| Metric | Definition |
+|---|---|
+| Contacted within one hour | Leads contacted in the first hour divided by all leads |
+| Lead-to-onboarded conversion | Leads reaching installed divided by all leads |
+| Activated within seven days | Installed devices reaching the activation threshold within seven days |
+| Tier-1 resolution without human | Tier-1 tickets closed by the agent divided by all tier-1 tickets |
+| FSE admin time | Share of FSE time spent on non-visit work |
+| Cost per activated merchant | FSE and agent cost divided by activated merchants |
+| Override rate | Human overrides divided by reviewed or overridden actions |
+| Handoff resolution | Resolved handoffs divided by created handoffs |
+
+`server.simulation` compares manual and Saathi-assisted workflows on synthetic
+populations and reports confidence intervals. Its numbers are assumptions and
+projections, not production Paytm results.
+
+## Business impact
+
+- **Merchant growth:** faster outreach and fewer stalled onboarding journeys.
+- **FSE productivity:** less manual chasing and status lookup; more time for
+  visits, negotiation, and relationship building.
+- **Support efficiency:** common questions are answered with context, while
+  complex cases arrive as prepared handoffs.
+- **Risk control:** no autonomous discounts, refunds, loan decisions, or
+  unsupported commitments.
+- **Operational learning:** outcomes, overrides, and simulation results reveal
+  where automation should be promoted or restricted.
+
+## Technology stack
+
+| Area | Current technology |
+|---|---|
+| Frontend | Next.js 16.4.3, React 19.3, TypeScript, Tailwind CSS 4 |
+| API | Python, FastAPI, Uvicorn, Pydantic |
+| Persistence | SQLite and SQLAlchemy 2 |
+| Agent | Python ports, lifecycle state machine, structured planner and tools |
+| LLM | Configurable OpenAI-compatible client; Gemini configuration supported by the simulator |
+| Retrieval | BM25 policy search over Markdown documents |
+| Documents | OpenCV headless, Pillow, pytesseract/Tesseract-compatible OCR, synthetic samples |
+| Events | In-process event bus, Server-Sent Events, polling fallback |
+| Scheduling | Async background scheduler with a demo clock |
+| Testing | pytest, unit tests, API contract tests, integration tests, e2e scenarios |
+| Tooling | Makefile, OpenAPI export, ownership/import-boundary checker |
+
+## Repository map and boundaries
+
+| Area | Location | Responsibility |
+|---|---|---|
+| Agent | `agent/` | Context, NLU, planner, guardrails, tools, policy, scoring |
+| Integrations | `integrations/` | Simulator, WhatsApp, documents, OCR, mock KYC |
+| Platform | `server/`, `e2e/`, `scripts/`, `docs/`, root files | Database, API, events, scheduler, simulation, wiring |
+| Frontend | `frontend/` | Next.js product views and browser presentation |
+
+`agent/` does not import server or integration internals. `integrations/`
+uses the boundary types in `agent/ports.py`. `server/main.py` is the
+composition root and owns dependency injection.
+
+## Setup, startup, and dependencies
+
+Follow [docs/SETUP-AND-STARTUP.md](docs/SETUP-AND-STARTUP.md) for the full
+Windows workflow. The essential commands are:
+
+```powershell
+python --version
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .
+python -m pip install -r integrations\requirements.txt
+Copy-Item .env.example .env
+Copy-Item server\.env.example server\.env
+Copy-Item agent\.env.example agent\.env
 python -m server.db.seed
-# or: make seed
-```
-Farida Sweets is the fully onboarded example, with approved synthetic PAN and address-proof records, a completed field visit, an active device, and 42 successful transactions.
-
-### 3. Run FastAPI Backend
-```bash
 python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload
-# or: make dev
-```
-Interactive Swagger docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-#### Configure Gemini for the simulator
-
-The Gemini Developer API key and model are read server-side from `agent/.env`.
-That file is ignored by Git; never commit or share it. Example settings:
-
-```env
-LLM_PROVIDER=gemini
-LLM_MODEL=gemini-flash-lite-latest
-LLM_API_KEY=<your Gemini API key>
-LLM_TIMEOUT_SECONDS=15
 ```
 
-The timeout leaves headroom above Gemini's 10-second minimum request deadline.
-When Gemini is configured, low-confidence chat requests use it for intent,
-planning, and policy-grounded reply generation. If Gemini is unavailable, the
-agent falls back to the retrieved policy text. The simulator does not send real
-WhatsApp messages without separate WhatsApp Business credentials.
-Install the declared dependencies with `pip install -e .`, then restart the
-backend so it loads the new environment settings. Verify
-`http://localhost:8000/api/health` reports `llm_configured: true`, then send a
-test message in the simulator. This connects Gemini to the app's agent; it does
-not enable real WhatsApp delivery, which requires separate WhatsApp Business
-Platform credentials and webhook configuration.
+In another terminal:
 
-### 4. Run the Frontend
-```bash
+```powershell
 cd frontend
-npm ci
+npm install
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000). The frontend uses a
-same-origin Next.js API proxy to connect to the backend at
-`http://127.0.0.1:8000` by default. To use another backend, set
-`SAATHI_BACKEND_URL` in the frontend server environment (the value is the
-backend origin, without `/api`). If the backend has `SAATHI_API_KEY` configured,
-set the same key in the frontend server environment; it is forwarded server-side
-and is never exposed to browser JavaScript. Do not use a `NEXT_PUBLIC_` variable
-for API credentials. Frontend checks: `npm test`, `npm run lint`, and
-`npm run build`.
 
----
+If `python` is not recognized, install Python 3.11+ with **Add python.exe to
+PATH** enabled, restart the terminal, and repeat the commands. The `py`
+launcher form works only when that optional launcher is installed.
 
-## 3. Testing & Verification
+## API and verification
 
-### Run Unit Tests (PL-01 to PL-16)
-Tests database models, idempotency, illegal state transition guards, context bundle construction, append-only audit logging, clock advancement, and simulation determinism:
-```bash
-pytest server/tests -v
-# or: make test
-```
+The generated contract is in [`docs/openapi.json`](docs/openapi.json). Run:
 
-### Run End-to-End Acceptance Tests (AT-1 to AT-9)
-Tests the 5 hero scenarios live through the API contract:
-```bash
-pytest e2e -v
-# or: make e2e
-```
-
-### Run Simulation Report
-Generates Monte Carlo 30-day projection on 300 synthetic leads across 30 random seeds, comparing Manual vs. Saathi-assisted workflows with 95% confidence intervals:
-```bash
-python -m server.simulation.report
-# or: make sim
-```
-
-### Check Ownership Boundaries
-Ensures that no files outside Platform ownership are modified and that import boundaries remain intact:
-```bash
+```powershell
+python -m pytest server/tests -v
+python -m pytest agent/tests -v
+python -m pytest integrations/tests -v
+python -m pytest e2e -v
 python scripts/check_ownership.py
-# or: make check
+python -m server.simulation.report
 ```
 
----
+Useful URLs:
 
-## 4. REST API Overview
+- API health: <http://localhost:8000/api/health>
+- Swagger UI: <http://localhost:8000/docs>
+- Frontend: <http://localhost:3000>
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | Service health, database connection, simulated clock offset |
-| `GET` | `/api/briefing` | Morning briefing: overnight counts, daily route, top leads |
-| `GET` | `/api/merchants` | Paginated lead list with category, state, and score filters |
-| `GET` | `/api/merchants/{id}` | Merchant 360 profile, timeline, docs, visits, tickets |
-| `GET` | `/api/merchants/{id}/next-action` | Preview of the planner's proposed next best action |
-| `POST` | `/api/chat/{merchant_id}/message` | Inbound simulator message triggering the agent loop |
-| `POST` | `/api/documents/{merchant_id}` | Multipart document upload for KYC quality pre-check |
-| `GET` | `/api/actions` | List of proposed, approved, and executed actions |
-| `POST` | `/api/actions/{id}/approve` | Human approval of an L2 action |
-| `POST` | `/api/actions/{id}/reject` | Human rejection of an L2 action with override reason |
-| `GET` | `/api/handoffs` | Escalation queue with structured context summaries |
-| `POST` | `/api/handoffs/{id}/resolve` | Resolve escalation handoff |
-| `GET` | `/api/autonomy` | Autonomy levels (L1, L2, L3) per action type |
-| `PUT` | `/api/autonomy/{action_type}` | Dynamic autonomy promotion/demotion |
-| `GET` | `/api/scoreboard` | Live KPIs, funnel metrics, and override rates |
-| `POST` | `/api/simulation/run` | Execute 30-day simulation with parameter overrides |
-| `GET` | `/api/simulation/{run_id}` | Retrieve simulation report and confidence intervals |
-| `GET` | `/api/audit` | Append-only audit trail |
-| `POST` | `/api/demo/reset` | Instantaneous DB restore from pristine snapshot (<1s) |
-| `POST` | `/api/demo/advance` | Advance simulated clock and trigger due background jobs |
-| `POST` | `/api/demo/device-event` | Simulate device install and transaction increments |
-| `GET` | `/api/stream` | Server-Sent Events (SSE) live action feed |
-| `GET` | `/api/events` | Polling fallback for live events |
+## Make targets
 
-The complete OpenAPI 3.1 specification is maintained in [`docs/openapi.json`](docs/openapi.json).
+| Command | Purpose |
+|---|---|
+| `make setup` | Install the editable Python package and copy environment files |
+| `make seed` | Build the seeded database and reset snapshot |
+| `make dev` | Start FastAPI on port 8000 |
+| `make test` | Run server unit tests |
+| `make e2e` | Run end-to-end acceptance tests |
+| `make sim` | Run the simulation report |
+| `make check` | Verify ownership and import boundaries |
