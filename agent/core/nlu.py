@@ -150,11 +150,17 @@ def _sentiment(text: str) -> float:
     return max(-1.0, min(1.0, float(raw)))
 
 
+def _word_match(phrase: str, text: str) -> bool:
+    """Match word or phrase with word boundaries to avoid substring false positives (e.g. 'hi' in 'nahi')."""
+    pattern = r"(?:\b|^)" + re.escape(phrase.strip()) + r"(?:\b|$)"
+    return bool(re.search(pattern, text, re.IGNORECASE))
+
+
 def _keyword_classify(text: str) -> tuple[Intent, float]:
     """
     Return (intent, confidence) from keyword matching.
-    Nuanced, compound, or conversational questions receive moderate confidence (0.65)
-    so that LLM classification evaluates the multi-clause context unless force_keywords is True.
+    Word boundaries ensure single words like 'hi' do not match 'nahi' or 'delhi'.
+    Substantive intents (discount, human, fees, settlement) take priority over greetings.
     """
     lower = text.lower()
     words = text.strip().split()
@@ -165,27 +171,30 @@ def _keyword_classify(text: str) -> tuple[Intent, float]:
         or (lower.count("?") > 1)
     )
 
-    # Priority check for explicit intents
-    fast_intents: list[tuple[bool, Intent]] = [
-        (any(w in lower for w in ["hello", "hi", "namaste", "namaskar", "hey", "good morning", "good evening", "bye", "alvida"]), Intent.GREETING),
-        ("discount" in lower or "kam karo" in lower, Intent.ASK_DISCOUNT),
-        ("fees" in lower or "fee" in lower or "charge" in lower or "kitna" in lower or "rental" in lower, Intent.ASK_FEES),
-        ("settlement" in lower or "paisa nahi" in lower or "payment nahi" in lower, Intent.SETTLEMENT_QUERY),
-        ("manager" in lower or "baat karao" in lower or "insaan" in lower, Intent.ASK_HUMAN),
-        ("theek hai" in lower or "aa jao" in lower or "visit" in lower, Intent.AGREE_VISIT),
-        ("stop" in lower or "mat bhejo" in lower or "unsubscribe" in lower, Intent.OPT_OUT),
+    # Priority check with word boundaries: specific commercial/action intents first, then greetings
+    fast_intents: list[tuple[list[str], Intent]] = [
+        (["stop", "mat bhejo", "unsubscribe", "band karo", "opt out", "do not contact"], Intent.OPT_OUT),
+        (["manager", "baat karao", "insaan", "human", "call karo", "supervisor", "incharge", "baat karni hai", "baat karni"], Intent.ASK_HUMAN),
+        (["discount", "kam karo", "chhoot", "less fees", "rebate", "kam kijiye", "kam kar do", "waive"], Intent.ASK_DISCOUNT),
+        (["settlement", "paisa nahi aaya", "payment nahi aaya", "paise nahi mile", "nahi aaya", "nahi mila", "missing payment", "account mein nahi"], Intent.SETTLEMENT_QUERY),
+        (["kaam nahi kar raha", "not working", "broken", "soundbox band", "battery", "sound nahi", "announce nahi", "scan nahi"], Intent.DEVICE_ISSUE),
+        (["fraud", "dhokha", "bekar", "complain", "complaint", "scam", "cheating"], Intent.COMPLAINT),
+        (["visit", "theek hai", "aa jao", "kal aao", "schedule", "book", "confirm slot", "agreed"], Intent.AGREE_VISIT),
+        (["fees", "fee", "charge", "kitna", "rental", "kiraya", "price", "cost", "mdr", "upi charge", "transaction charge"], Intent.ASK_FEES),
+        (["documents", "document", "pan", "kyc", "aadhaar", "papers"], Intent.ASK_DOCUMENTS),
+        (["nahi chahiye", "interested nahi", "not interested", "zaroorat nahi"], Intent.NOT_INTERESTED),
+        (["hello", "hi", "namaste", "namaskar", "hey", "good morning", "good evening", "bye", "alvida", "kaise ho", "kya haal", "kaisa hai", "dhanyawad", "shukriya"], Intent.GREETING),
     ]
 
-    for condition, matched_intent in fast_intents:
-        if condition:
-            # If compound or conversational query, yield moderate confidence to let LLM evaluate nuance
-            conf = 0.65 if is_compound_or_conversational else 0.95
+    for kws, matched_intent in fast_intents:
+        if any(_word_match(kw, lower) for kw in kws):
+            conf = 0.95
             return matched_intent, conf
 
     matches: list[tuple[Intent, int]] = []
 
     for intent, keywords in _KEYWORD_MAP.items():
-        score = sum(1 for kw in keywords if kw in lower)
+        score = sum(1 for kw in keywords if _word_match(kw, lower))
         if score > 0:
             matches.append((intent, score))
 
