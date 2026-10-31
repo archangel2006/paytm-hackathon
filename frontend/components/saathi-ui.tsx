@@ -168,7 +168,7 @@ export function Feed({ items, limit }: { items: AgentAction[]; limit?: number })
 
           <summary className={item.guardrail_notes.length || item.status === "blocked" ? "guardrail-alert" : ""}>
 
-            Guardrails &#183; {guardrailSummary(item)}
+            Guardrails · {guardrailSummary(item)}
 
           </summary>
 
@@ -488,7 +488,7 @@ export function DashboardView({
 
     ].map(([text, value]) => <div className="kp" key={String(text)}><b>{value}</b><span className="sm m">{text}</span></div>)}</Grid>
 
-    <p className="data-caption">Live demo data &#183; synthetic merchant records</p>
+    <p className="data-caption">Live demo data · synthetic merchant records</p>
 
     <Grid className="g2 dashboard-panels">
 
@@ -500,9 +500,9 @@ export function DashboardView({
 
         const countLabel = successful > 0 && !merchant.activation_eligible
 
-          ? `${progress} / 10 activation goal &#183; ${successful} recorded; prerequisites incomplete`
+          ? `${progress} / 10 activation goal · ${successful} recorded; prerequisites incomplete`
 
-          : `${progress} / 10 goal${successful > 10 ? ` &#183; ${successful} recorded` : successful === 10 ? " &#183; goal reached" : ""}`;
+          : `${progress} / 10 goal${successful > 10 ? ` · ${successful} recorded` : successful === 10 ? " · goal reached" : ""}`;
 
         return <div className="row scenario-row" key={merchant.id}><div className="merchant-row-head"><a className="lk" href={`#m-${merchant.id}`}>{merchant.shop_name}</a><Badge className={statusClass(merchant.state)}>{displayStatus(merchant.state)}</Badge></div><div className="mini-progress"><span className="sm m">{countLabel}</span><div className="bar" role="progressbar" aria-label={`${merchant.shop_name} transaction goal`} aria-valuemin={0} aria-valuemax={10} aria-valuenow={progress}><b style={{ width: `${progress * 10}%` }} /></div></div></div>;
 
@@ -584,15 +584,15 @@ export function MerchantsView({ merchants, actions }: { merchants: Merchant[]; a
 
       return <tr key={merchant.id}>
 
-        <td><a className="lk merchant-link" href={`#m-${merchant.id}`}><b>{merchant.shop_name}</b></a><span className="sm m merchant-owner">{merchant.owner_name} &#183; {merchant.category} &#183; {merchant.area || merchant.city}</span></td>
+        <td><a className="lk merchant-link" href={`#m-${merchant.id}`}><b>{merchant.shop_name}</b></a><span className="sm m merchant-owner">{merchant.owner_name} · {merchant.category} · {merchant.area || merchant.city}</span></td>
 
         <td><Badge className={statusClass(merchant.state)}>{displayStatus(merchant.state)}</Badge></td>
 
         <td><Badge className={documentClass}>{documentStatus}</Badge><span className="sm m cell-note">Pre-check is not official KYC</span></td>
 
-        <td className="activation-cell"><div className="activation-count"><b>{activationProgress} / 10</b><span>{merchant.activation_eligible ? " activation goal" : " goal &#183; prerequisites incomplete"}</span></div>{merchant.successful_txn_count > 0 && <span className="sm m cell-note">{merchant.successful_txn_count} recorded</span>}<div className="bar"><b style={{ width: `${activationProgress * 10}%` }} /></div></td>
+        <td className="activation-cell"><div className="activation-count"><b>{activationProgress} / 10</b><span>{merchant.activation_eligible ? " activation goal" : " goal · prerequisites incomplete"}</span></div>{merchant.successful_txn_count > 0 && <span className="sm m cell-note">{merchant.successful_txn_count} recorded</span>}<div className="bar"><b style={{ width: `${activationProgress * 10}%` }} /></div></td>
 
-        <td><Badge className={guardrailClass}>{guardrailStatus}</Badge>{recentAction && <span className="sm m cell-note">{label(recentAction.action_type)} &#183; {timeLabel(recentAction.created_at)}</span>}</td>
+        <td><Badge className={guardrailClass}>{guardrailStatus}</Badge>{recentAction && <span className="sm m cell-note">{label(recentAction.action_type)} · {timeLabel(recentAction.created_at)}</span>}</td>
 
         <td className="score-cell"><b>{Math.round(merchant.lead_score)}</b><div className="bar"><b style={{ width: `${merchant.lead_score}%` }} /></div></td>
 
@@ -670,9 +670,9 @@ function DocumentCard({
 
   } else if (document) {
 
-    state = document.quality === "blurry" ? "Retake &#183; image blurry"
+    state = document.quality === "blurry" ? "Retake · image blurry"
 
-      : document.quality === "unreadable" ? "Retake &#183; unreadable"
+      : document.quality === "unreadable" ? "Retake · unreadable"
 
         : "Review required";
 
@@ -858,13 +858,13 @@ function MerchantConversation({
 
       <div><p className="eyebrow">{isChat ? "WHATSAPP CHAT" : "MERCHANT CONVERSATION"}</p><h3>{isChat ? `Chat with ${merchant.shop_name}` : "Simulator messages"}</h3></div>
 
-      <span className="sm m">Persisted by backend &#183; {label(merchant.preferred_channel)} channel</span>
+      <span className="sm m">Persisted by backend · {label(merchant.preferred_channel)} channel</span>
 
     </div>
 
     {isChat && <a className="lk sm chat-back" href={`#m-${merchant.id}`}>&larr; Back to merchant overview</a>}
 
-    <div className="ph"><div className="t">Paytm Saathi &#183; {label(merchant.preferred_channel)}</div><div className="ms" aria-live="polite">{messages.length ? messages.map((message) => <div className={`bu ${message.direction === "in" ? "m" : ""}`} key={message.id}>{message.text}<div className="message-time">{timeLabel(message.created_at)}</div></div>) : <p className="sm m phone-empty">No messages saved yet. Send a message to the backend agent.</p>}</div>
+    <div className="ph"><div className="t">Paytm Saathi · {label(merchant.preferred_channel)}</div><div className="ms" aria-live="polite">{messages.length ? messages.map((message) => <div className={`bu ${message.direction === "in" ? "m" : ""}`} key={message.id}>{message.text}<div className="message-time">{timeLabel(message.created_at)}</div></div>) : <p className="sm m phone-empty">No messages saved yet. Send a message to the backend agent.</p>}</div>
 
       <form className="in" onSubmit={submitMessage}><label className="sr-only" htmlFor="merchant-message">Message</label><div className="message-controls"><input id="merchant-message" value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a merchant message..." maxLength={4000} disabled={busy} /><button className="btn x" type="submit" disabled={busy || !text.trim()}>{busy ? "Sending..." : "Send"}</button><button className="voice-button" type="button" onClick={listening ? () => recognition.current?.stop() : startVoiceInput} disabled={busy} aria-label={listening ? "Stop voice input" : "Start voice input"} title={listening ? "Stop voice input" : "Dictate message"}>{listening ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg> : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>}</button></div>{listening && <span className="sm voice-status" role="status">Listening... speak now, then review and send.</span>}{voiceError && <span className="sm voice-error" role="status">{voiceError}</span>}</form>
 
@@ -940,11 +940,11 @@ export function MerchantDetailView({
 
   return <Shell>
 
-    <a className="lk sm" href={isChat ? `#m-${merchant.id}` : "#merchants"}>{isChat ? "&#8592; Back to merchant overview" : "&#8592; Back to portfolio"}</a>
+    <a className="lk sm" href={isChat ? `#m-${merchant.id}` : "#merchants"}>{isChat ? "← Back to merchant overview" : "← Back to portfolio"}</a>
 
     <div className="detail-hero">
 
-      <div><p className="eyebrow">MERCHANT 360</p><div className="detail-title-row"><h2>{merchant.shop_name}</h2><Badge className={statusClass(merchant.state)}>{displayStatus(merchant.state)}</Badge></div><p className="m detail-subtitle">{merchant.owner_name} &#183; {label(merchant.category)} &#183; {merchant.area || merchant.city} &#183; {label(merchant.language)}</p>{!isChat && <a className="whatsapp-launch merchant-chat-launch" href={`#chat-${merchant.id}`} aria-label={`Open WhatsApp chat with ${merchant.shop_name}`} title="Open WhatsApp chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.8a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.3-4.7A8.5 8.5 0 1 1 20.5 11.8Z" /><path d="M8.2 7.8c.2-.4.4-.4.7-.4h.4c.2 0 .4.1.5.4l.7 1.6c.1.2.1.4 0 .5l-.5.6c-.2.2-.2.4-.1.6.4.7 1 1.3 1.7 1.7.2.1.4.1.6-.1l.6-.7c.2-.2.3-.2.6-.1l1.5.7c.3.1.4.3.4.5 0 .3-.2 1.2-.7 1.6-.5.5-1.2.7-1.9.5-.7-.2-1.6-.5-2.7-1.5-1.4-1.2-2.3-2.6-2.5-3.5-.2-.9.1-1.7.7-2.4Z" /></svg><span>WhatsApp chat</span></a>}</div>
+      <div><p className="eyebrow">MERCHANT 360</p><div className="detail-title-row"><h2>{merchant.shop_name}</h2><Badge className={statusClass(merchant.state)}>{displayStatus(merchant.state)}</Badge></div><p className="m detail-subtitle">{merchant.owner_name} · {label(merchant.category)} · {merchant.area || merchant.city} · {label(merchant.language)}</p>{!isChat && <a className="whatsapp-launch merchant-chat-launch" href={`#chat-${merchant.id}`} aria-label={`Open WhatsApp chat with ${merchant.shop_name}`} title="Open WhatsApp chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 11.8a8.5 8.5 0 0 1-12.6 7.4L3 20.5l1.3-4.7A8.5 8.5 0 1 1 20.5 11.8Z" /><path d="M8.2 7.8c.2-.4.4-.4.7-.4h.4c.2 0 .4.1.5.4l.7 1.6c.1.2.1.4 0 .5l-.5.6c-.2.2-.2.4-.1.6.4.7 1 1.3 1.7 1.7.2.1.4.1.6-.1l.6-.7c.2-.2.3-.2.6-.1l1.5.7c.3.1.4.3.4.5 0 .3-.2 1.2-.7 1.6-.5.5-1.2.7-1.9.5-.7-.2-1.6-.5-2.7-1.5-1.4-1.2-2.3-2.6-2.5-3.5-.2-.9.1-1.7.7-2.4Z" /></svg><span>WhatsApp chat</span></a>}</div>
 
       <div className="detail-quick-stats"><div><span>Lead score</span><b>{Math.round(merchant.lead_score)}<small> / 100</small></b></div><div><span>Consent</span><b className={merchant.consent ? "text-ok" : "text-bad"}>{merchant.consent ? "Active" : "Opted out"}</b></div></div>
 
@@ -986,7 +986,7 @@ export function MerchantDetailView({
 
           <div className="section-heading"><div><p className="eyebrow">DEVICE ACTIVATION</p><h3>First 10 successful transactions</h3></div><Badge className={activationComplete ? "ok" : transactionProgress >= 10 ? "wn" : "bl"}>{transactionProgress} / 10</Badge></div>
 
-          <div className="activation-summary"><span>Device status</span><Badge className={deviceInstalled ? "ok" : "gy"}>{deviceInstalled ? label(merchant.device?.status ?? "installed") : "Not installed"}</Badge><strong>{transactionProgress}<small> of 10 goal &#183; {successfulTransactions} recorded</small></strong></div>
+          <div className="activation-summary"><span>Device status</span><Badge className={deviceInstalled ? "ok" : "gy"}>{deviceInstalled ? label(merchant.device?.status ?? "installed") : "Not installed"}</Badge><strong>{transactionProgress}<small> of 10 goal · {successfulTransactions} recorded</small></strong></div>
 
           <div className="bar activation-bar" role="progressbar" aria-label="Successful transactions toward activation" aria-valuemin={0} aria-valuemax={10} aria-valuenow={transactionProgress}><b style={{ width: `${transactionProgress * 10}%` }} /></div>
 
@@ -1018,7 +1018,7 @@ export function MerchantDetailView({
 
           <div className="section-heading"><div><p className="eyebrow">FIELD OPERATIONS</p><h3>Visits and assignment</h3></div></div>
 
-          {merchant.visits.length ? merchant.visits.map((visit) => <div className="visit-card" key={visit.id}><div><b>{label(visit.status)} visit</b><span className="sm m">{timeLabel(visit.slot_start)}</span></div><Badge className="bl">Route cluster &#183; {visit.cluster_size}</Badge></div>) : <p className="sm m">No field visit has been scheduled yet.</p>}
+          {merchant.visits.length ? merchant.visits.map((visit) => <div className="visit-card" key={visit.id}><div><b>{label(visit.status)} visit</b><span className="sm m">{timeLabel(visit.slot_start)}</span></div><Badge className="bl">Route cluster · {visit.cluster_size}</Badge></div>) : <p className="sm m">No field visit has been scheduled yet.</p>}
 
           <p className="sm m detail-meta">Assigned FSE: {merchant.fse_id ? label(merchant.fse_id) : "Not assigned"}</p>
 
@@ -1028,23 +1028,17 @@ export function MerchantDetailView({
 
       <div className="detail-column">
 
+        {/* Agent trace panels hidden for demo
         <section className="box detail-box safety-panel">
-
           <div className="section-heading"><div><p className="eyebrow">SAFETY & AUTONOMY</p><h3>Latest guardrail check</h3></div>{latestAction ? <Badge className={statusClass(latestAction.status)}>{guardrailSummary(latestAction)}</Badge> : <Badge className="gy">Not checked</Badge>}</div>
-
-          {latestAction ? <><p className="sm m">Action: <b>{label(latestAction.action_type)}</b> &#183; autonomy {latestAction.autonomy_level} &#183; {label(latestAction.source)} &#183; confidence {Math.round(latestAction.confidence * 100)}%</p>{latestAction.guardrail_notes.length ? <ul className="safety-notes">{latestAction.guardrail_notes.map((note) => <li key={note}>{note}</li>)}</ul> : <p className="sm m safety-clear">No blocking or escalation guardrail was recorded for the latest action.</p>}</> : <p className="sm m">No agent action has been recorded for this merchant yet.</p>}
-
+          {latestAction ? <><p className="sm m">Action: <b>{label(latestAction.action_type)}</b> autonomy {latestAction.autonomy_level} {label(latestAction.source)} confidence {Math.round(latestAction.confidence * 100)}%</p>{latestAction.guardrail_notes.length ? <ul className="safety-notes">{latestAction.guardrail_notes.map((note) => <li key={note}>{note}</li>)}</ul> : <p className="sm m safety-clear">No blocking or escalation guardrail was recorded for the latest action.</p>}</> : <p className="sm m">No agent action has been recorded for this merchant yet.</p>}
           <p className="sm m safety-footnote">The agent checks consent, quiet hours, daily limits, message claims, confidence, sensitive topics, and action autonomy before acting.</p>
-
         </section>
-
         <section className="box detail-box">
-
           <div className="section-heading"><div><p className="eyebrow">ACTION HISTORY</p><h3>Recent decisions</h3></div></div>
-
           <div className="feed-space"><Feed items={actions} limit={8} /></div>
-
         </section>
+        */}
 
       </div>
 
@@ -1169,7 +1163,7 @@ export function HandoffsView({
 
   const [notes, setNotes] = useState<Record<string, string>>({});
 
-  return <Shell><h2>Handoffs</h2><p className="m intro">Escalations from the backend agent. Add a resolution note when closing a handoff.</p>{handoffs.map((handoff) => <div className="box handoff-box" key={handoff.id}><div className="handoff-heading"><h3>{handoff.shop_name}</h3><Badge className={statusClass(handoff.status)}>{label(handoff.status)}</Badge></div><p className="sm m">{timeLabel(handoff.created_at)} &#183; {handoff.target} &#183; {handoff.reason}</p>{renderHandoffSummary(handoff.summary)}{handoff.resolution_note && <p className="sm m"><b>Resolution:</b> {handoff.resolution_note}</p>}{handoff.status === "open" && <form className="resolve-form" onSubmit={(event) => { event.preventDefault(); const note = notes[handoff.id]?.trim(); if (note) onResolve(handoff.id, note); }}><input aria-label={`Resolution note for ${handoff.shop_name}`} value={notes[handoff.id] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [handoff.id]: event.target.value }))} placeholder="Resolution note" required /><button className="btn x" type="submit" disabled={busy || !notes[handoff.id]?.trim()}>{busy ? "Saving..." : "Resolve"}</button></form>}</div>)}{!handoffs.length && <div className="box"><p className="m">No handoffs are recorded.</p></div>}</Shell>;
+  return <Shell><h2>Handoffs</h2><p className="m intro">Escalations from the backend agent. Add a resolution note when closing a handoff.</p>{handoffs.map((handoff) => <div className="box handoff-box" key={handoff.id}><div className="handoff-heading"><h3>{handoff.shop_name}</h3><Badge className={statusClass(handoff.status)}>{label(handoff.status)}</Badge></div><p className="sm m">{timeLabel(handoff.created_at)} · {handoff.target} · {handoff.reason}</p>{renderHandoffSummary(handoff.summary)}{handoff.resolution_note && <p className="sm m"><b>Resolution:</b> {handoff.resolution_note}</p>}{handoff.status === "open" && <form className="resolve-form" onSubmit={(event) => { event.preventDefault(); const note = notes[handoff.id]?.trim(); if (note) onResolve(handoff.id, note); }}><input aria-label={`Resolution note for ${handoff.shop_name}`} value={notes[handoff.id] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [handoff.id]: event.target.value }))} placeholder="Resolution note" required /><button className="btn x" type="submit" disabled={busy || !notes[handoff.id]?.trim()}>{busy ? "Saving..." : "Resolve"}</button></form>}</div>)}{!handoffs.length && <div className="box"><p className="m">No handoffs are recorded.</p></div>}</Shell>;
 
 }
 
