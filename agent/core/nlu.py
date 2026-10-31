@@ -87,7 +87,9 @@ _KEYWORD_MAP: dict[Intent, list[str]] = {
     ],
     Intent.GREETING: [
         "hello", "hi", "namaste", "namaskar", "hey", "good morning",
-        "good evening", "jai hind", "hola", "sup",
+        "good evening", "jai hind", "hola", "sup", "bye", "alvida",
+        "goodbye", "thank you", "thanks", "dhanyawad", "shukriya",
+        "kaise ho", "kya haal", "kaisa hai",
     ],
     Intent.INTEREST: [
         "chahiye", "lena hai", "interested", "tell me more", "batao",
@@ -165,6 +167,7 @@ def _keyword_classify(text: str) -> tuple[Intent, float]:
 
     # Priority check for explicit intents
     fast_intents: list[tuple[bool, Intent]] = [
+        (any(w in lower for w in ["hello", "hi", "namaste", "namaskar", "hey", "good morning", "good evening", "bye", "alvida"]), Intent.GREETING),
         ("discount" in lower or "kam karo" in lower, Intent.ASK_DISCOUNT),
         ("fees" in lower or "fee" in lower or "charge" in lower or "kitna" in lower or "rental" in lower, Intent.ASK_FEES),
         ("settlement" in lower or "paisa nahi" in lower or "payment nahi" in lower, Intent.SETTLEMENT_QUERY),

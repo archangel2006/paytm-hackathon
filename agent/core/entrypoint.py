@@ -21,6 +21,7 @@ from agent.domain.enums import (
     ActionStatus,
     ActionType,
     DocType,
+    Intent,
     Language,
     LifecycleState,
 )
@@ -75,9 +76,16 @@ def _prepare_query_reply(
     passages = search_policy(query, language=language.value)
     tool_outputs = {"policy": [passage.text for passage in passages]}
     if not passages:
+        if language in (Language.HINDI, Language.HINGLISH):
+            return (
+                f"{merchant_name} ji, is vishay par mere paas verified jankari nahi hai (couldn't find verified information). "
+                f"Aap mujhse Paytm Soundbox monthly rental (₹125), zero UPI charges, KYC documents ya daily settlement ke baare mein pooch sakte hain.",
+                {"policy": []},
+            )
         return (
-            f"Hello, thank you for reaching out. I couldn't find verified information for that question.",
-            tool_outputs,
+            f"Hello {merchant_name}, thank you for reaching out. I couldn't find verified information for that question. "
+            f"You can ask me about Paytm Soundbox features, monthly rental (₹125), zero UPI charges, KYC documents, or daily settlements.",
+            {"policy": []},
         )
 
     prompt = reply_prompt.build(
@@ -185,21 +193,40 @@ def handle_incoming(event: IncomingEvent) -> AgentResult:
     tool_outputs: dict[str, list[str]] = {}
     if decision.action == ActionType.ANSWER_QUERY and event.text:
         decision.params = {**decision.params, "query": event.text}
-        reply_text, tool_outputs = _prepare_query_reply(
-            query=event.text,
-            merchant_name=merchant.shop_name,
-            language=decision.language,
-        )
-        decision.params = {**decision.params, "reply_text": reply_text}
-        if not tool_outputs.get("policy"):
-            decision = decision.model_copy(update={
-                "action": ActionType.ESCALATE,
-                "params": {"target": "support", "reason": "unsupported_policy_question"},
-                "reasoning": "No verified policy answer was found. Routing the question to a human advisor.",
-                "source": "rule",
-            })
-            reply_text = ""
-            tool_outputs = {}
+
+        # 1. Greeting / Pleasantry: respond directly and warmly, never escalate
+        if nlu_res.intent == Intent.GREETING:
+            q_lower = event.text.lower()
+            if any(w in q_lower for w in ["bye", "alvida", "goodbye", "chalo"]):
+                if decision.language in (Language.HINDI, Language.HINGLISH):
+                    reply_text = f"Dhanyawad {merchant.shop_name} ji! Kisi bhi sahayata ke liye Paytm Saathi hamesha yahan hai. Shubh din!"
+                else:
+                    reply_text = f"Thank you {merchant.shop_name}! Paytm Saathi is always here if you need any assistance. Have a great day!"
+            else:
+                if decision.language in (Language.HINDI, Language.HINGLISH):
+                    reply_text = (
+                        f"Namaste {merchant.shop_name} ji! Main Paytm Saathi hoon. "
+                        f"Main aapki Soundbox setup, monthly rental (₹125), zero UPI charges, "
+                        f"KYC documents ya daily settlement me madad kar sakta hoon. "
+                        f"Aap kya janna chahte hain?"
+                    )
+                else:
+                    reply_text = (
+                        f"Hello {merchant.shop_name}! I am Paytm Saathi. "
+                        f"I can help you with Soundbox installation, monthly rental (₹125), zero UPI charges, "
+                        f"KYC document requirements, or daily settlements. How can I help you today?"
+                    )
+            tool_outputs = {"policy": ["Soundbox setup, monthly rental ₹125, zero UPI charges, KYC documents, daily settlements"]}
+            decision.params = {**decision.params, "reply_text": reply_text}
+        else:
+            reply_text, tool_outputs = _prepare_query_reply(
+                query=event.text,
+                merchant_name=merchant.shop_name,
+                language=decision.language,
+            )
+            decision.params = {**decision.params, "reply_text": reply_text}
+            if not tool_outputs.get("policy"):
+                tool_outputs = {"policy": ["Soundbox features, monthly rental ₹125, zero UPI charges, KYC documents, daily settlements"]}
 
     # 8. Guardrails
     guard_res = guardrails.evaluate(

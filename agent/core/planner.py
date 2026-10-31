@@ -250,8 +250,30 @@ def _rule_based(
     if event_kind == "timer":
         reason = context.merchant.state  # passed via params in handle_timer
 
-    # Rule 8: Fee questions / interest / general queries
-    if nlu.intent in (Intent.ASK_FEES, Intent.INTEREST, Intent.GREETING, Intent.ASK_DOCUMENTS):
+    # Rule: Complaint or dispute
+    if nlu.intent == Intent.COMPLAINT:
+        return PlannerDecision(
+            action=ActionType.ESCALATE,
+            params={"target": HandoffTarget.SUPPORT, "reason": "merchant_complaint"},
+            language=lang,
+            reasoning="Merchant expressed a complaint or critical issue. Escalating to support.",
+            confidence=1.0,
+            source="rule",
+        )
+
+    # Rule: Not interested / declines offer
+    if nlu.intent == Intent.NOT_INTERESTED:
+        return PlannerDecision(
+            action=ActionType.WAIT,
+            params={"days": 30, "reason": "not_interested"},
+            language=lang,
+            reasoning="Merchant declined the offer. Pausing outreach for 30 days.",
+            confidence=0.95,
+            source="rule",
+        )
+
+    # Rule 8: Fee questions / interest / general queries / device questions / greetings
+    if nlu.intent in (Intent.ASK_FEES, Intent.INTEREST, Intent.GREETING, Intent.ASK_DOCUMENTS, Intent.DEVICE_ISSUE):
         if ActionType.ANSWER_QUERY in allowed:
             inbound_query = next(
                 (m.text for m in reversed(context.recent_messages) if m.direction == "in" and m.text),
@@ -262,7 +284,7 @@ def _rule_based(
                 action=ActionType.ANSWER_QUERY,
                 params={"query": query_text},
                 language=lang,
-                reasoning="Merchant asked about fees or product details. Providing grounded answer from policy.",
+                reasoning="Merchant asked about fees, device, documents, or sent a greeting. Providing grounded answer.",
                 confidence=0.95,
                 source="rule",
             )

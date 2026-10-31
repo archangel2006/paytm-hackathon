@@ -1,4 +1,5 @@
-from typing import Optional
+import json
+from typing import Optional, Union
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from server.api.deps import get_repo, APIError
@@ -8,6 +9,21 @@ router = APIRouter(prefix="/handoffs", tags=["handoffs"])
 
 class ResolveRequest(BaseModel):
     note: str
+
+
+def _parse_summary(raw: Union[dict, str, None]) -> dict:
+    """Ensure summary is always returned as a dict, not a JSON string."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return {}
+
 
 @router.get("")
 def list_handoffs(
@@ -26,7 +42,7 @@ def list_handoffs(
             "shop_name": shop_name,
             "target": h.target,
             "reason": h.reason,
-            "summary": h.summary or {},
+            "summary": _parse_summary(h.summary),
             "status": h.status,
             "resolution_note": h.resolution_note,
             "created_at": h.created_at.isoformat()
@@ -43,4 +59,3 @@ def resolve_handoff(handoff_id: str, req: ResolveRequest, repo: PlatformRepo = D
         "handoff_id": handoff.id,
         "resolution_note": handoff.resolution_note
     }
-
